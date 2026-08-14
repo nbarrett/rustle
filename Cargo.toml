@@ -1,0 +1,12 @@
+[package]
+name = "rustle"
+version = "0.1.0"
+edition = "2021"
+description = "Open-source local-Whisper dictation in Rust. A Wispr Flow replacement you own."
+license = "MIT"
+repository = "https://github.com/nbarrett/rustle"
+
+[dependencies]
+anyhow = "1"
+cpal = "0.15"
+whisper-rs = "0.12"
