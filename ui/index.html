@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rustle</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header class="masthead">
+        <h1>Rustle</h1>
+        <span id="status-pill" class="status-pill status-idle">Idle</span>
+      </header>
+
+      <section class="field">
+        <label class="field-label" for="dictation-toggle">Dictation</label>
+        <label class="switch">
+          <input type="checkbox" id="dictation-toggle" checked />
+          <span class="switch-track"></span>
+          <span class="switch-caption" id="dictation-caption">Listening for the hotkey</span>
+        </label>
+      </section>
+
+      <section class="field">
+        <span class="field-label">Live transcript</span>
+        <textarea
+          id="live-transcript"
+          class="transcript"
+          readonly
+          rows="3"
+          placeholder="Hold your key and speak - your words appear here as you talk."
+        ></textarea>
+      </section>
+
+      <section class="field">
+        <label class="field-label" for="hotkey-select">Push-to-talk key</label>
+        <select id="hotkey-select"></select>
+        <p class="field-hint">Hold to talk, release to type into the focused app.</p>
+      </section>
+
+      <section class="field">
+        <label class="field-label" for="microphone-select">Microphone</label>
+        <select id="microphone-select"></select>
+      </section>
+
+      <section class="field">
+        <label class="field-label" for="model-select">Model</label>
+        <div class="inline-row">
+          <select id="model-select"></select>
+          <button id="model-download" class="secondary" type="button" hidden>
+            Download
+          </button>
+        </div>
+        <p class="field-hint" id="download-status"></p>
+      </section>
+
+      <section class="field">
+        <span class="field-label">Word corrections</span>
+        <p class="field-hint">Fix words Whisper mishears. Left is what it heard, right is what to write instead.</p>
+        <div id="corrections-list" class="corrections-list"></div>
+        <button id="add-correction" class="secondary" type="button">Add correction</button>
+      </section>
+
+      <section class="field">
+        <label class="field-label" for="launch-toggle">Startup</label>
+        <label class="switch">
+          <input type="checkbox" id="launch-toggle" />
+          <span class="switch-track"></span>
+          <span class="switch-caption">Launch Rustle at login</span>
+        </label>
+      </section>
+
+      <footer class="actions">
+        <span id="save-note" class="save-note"></span>
+        <button id="save-button" class="primary">Save settings</button>
+      </footer>
+    </main>
+
+    <script src="main.js"></script>
+  </body>
+</html>

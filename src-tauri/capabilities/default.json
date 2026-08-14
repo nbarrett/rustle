@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Rustle settings window capability",
+  "windows": ["settings"],
+  "permissions": ["core:default", "core:window:allow-set-size"]
+}

@@ -1,3 +1,5 @@
 /target
 /models/*.bin
+/node_modules
+/src-tauri/gen
 .DS_Store
