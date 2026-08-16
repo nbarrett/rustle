@@ -1,7 +1,14 @@
 use anyhow::{anyhow, Result};
+use dispatch2::DispatchQueue;
+use objc2::runtime::AnyObject;
+use objc2::{AnyThread, MainThreadMarker};
+use objc2_app_kit::NSWorkspace;
+use objc2_foundation::{
+    NSAppleScript, NSAppleScriptErrorBriefMessage, NSAppleScriptErrorMessage, NSDictionary,
+    NSString,
+};
 use std::ffi::c_void;
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::sync::mpsc;
 
 type CGEventRef = *mut c_void;
 type CGEventSourceRef = *mut c_void;
@@ -62,6 +69,7 @@ extern "C" {
 
 pub struct FrontApp {
     pub name: String,
+    pub bundle: Option<String>,
     pub pid: i32,
 }
 
@@ -69,7 +77,65 @@ pub fn name_looks_like_iterm(name: &str) -> bool {
     name.to_ascii_lowercase().contains("iterm")
 }
 
+pub fn bundle_looks_like_iterm(bundle: &str) -> bool {
+    bundle.eq_ignore_ascii_case("com.googlecode.iterm2")
+}
+
+impl FrontApp {
+    pub fn is_iterm(&self) -> bool {
+        name_looks_like_iterm(&self.name)
+            || self
+                .bundle
+                .as_deref()
+                .is_some_and(bundle_looks_like_iterm)
+    }
+}
+
 pub fn frontmost_app() -> Option<FrontApp> {
+    if let Some(app) = workspace_front_app() {
+        if !app_is_our_process(&app) && !name_is_chrome_ui(&app.name) {
+            return Some(app);
+        }
+    }
+    window_list_front_app()
+}
+
+fn workspace_front_app() -> Option<FrontApp> {
+    let workspace = NSWorkspace::sharedWorkspace();
+    let running = workspace.frontmostApplication()?;
+    let name = running
+        .localizedName()
+        .map(|name| name.to_string())
+        .unwrap_or_default();
+    let bundle = running.bundleIdentifier().map(|bundle| bundle.to_string());
+    let pid = running.processIdentifier();
+    if name.is_empty() && bundle.is_none() {
+        return None;
+    }
+    Some(FrontApp { name, bundle, pid })
+}
+
+fn app_is_our_process(app: &FrontApp) -> bool {
+    app.pid == std::process::id() as i32 || app.name.eq_ignore_ascii_case("rustle")
+}
+
+fn name_is_chrome_ui(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "window server"
+            | "dock"
+            | "control center"
+            | "notification center"
+            | "notification centre"
+            | "spotlight"
+            | "systemuiserver"
+            | "wallpaper"
+            | "loginwindow"
+    )
+}
+
+fn window_list_front_app() -> Option<FrontApp> {
     unsafe {
         let windows = CGWindowListCopyWindowInfo(WINDOW_LIST_ON_SCREEN_AND_EXCLUDE_DESKTOP, 0);
         if windows.is_null() {
@@ -101,10 +167,14 @@ pub fn frontmost_app() -> Option<FrontApp> {
             let Some(name) = dictionary_string(dictionary, name_key) else {
                 continue;
             };
-            if name.is_empty() {
+            if name.is_empty() || name_is_chrome_ui(&name) {
                 continue;
             }
-            found = Some(FrontApp { name, pid });
+            found = Some(FrontApp {
+                name,
+                bundle: None,
+                pid,
+            });
             break;
         }
         CFRelease(layer_key as CFTypeRef);
@@ -123,46 +193,26 @@ pub fn apply_system_events_delta(
     if backspace_count == 0 && text.is_empty() && !press_return {
         return Ok(());
     }
-    let script = r#"on run argv
-  set theDeletes to item 1 of argv as integer
-  set theText to item 2 of argv
-  set shouldReturn to item 3 of argv
-  tell application "System Events"
-    repeat theDeletes times
-      key code 51
-    end repeat
-    if (count of theText) > 0 then
-      keystroke theText
-    end if
-    if shouldReturn is "yes" then
-      key code 36
-    end if
-  end tell
-end run"#;
-    let deletes = backspace_count.to_string();
-    let return_flag = if press_return { "yes" } else { "no" };
-    let output = run_osascript(script, &[&deletes, text, return_flag])?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!(
-            "System Events type failed: {}",
-            stderr.trim().replace('\n', " ")
-        ));
-    }
-    Ok(())
+    let text_literal = applescript_literal(text);
+    let script = format!(
+        r#"tell application "System Events"
+  repeat {backspace_count} times
+    key code 51
+  end repeat
+  if {text_literal} is not "" then
+    keystroke {text_literal}
+  end if
+  if "{return_flag}" is "yes" then
+    key code 36
+  end if
+end tell"#,
+        return_flag = if press_return { "yes" } else { "no" },
+    );
+    run_applescript(&script)
 }
 
 pub fn post_system_events_command_v() -> Result<()> {
-    let script = r#"tell application "System Events" to keystroke "v" using command down"#;
-    let output = run_osascript(script, &[])?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!(
-            "System Events paste failed: {}",
-            stderr.trim().replace('\n', " ")
-        ));
-    }
-    Ok(())
+    run_applescript(r#"tell application "System Events" to keystroke "v" using command down"#)
 }
 
 pub fn apply_iterm_session_delta(
@@ -174,34 +224,36 @@ pub fn apply_iterm_session_delta(
         return Ok(());
     }
     let deletes = "\u{7f}".repeat(backspace_count);
-    let script = r#"on run argv
-  set theDeletes to item 1 of argv
-  set theText to item 2 of argv
-  set shouldReturn to item 3 of argv
-  tell application "iTerm"
-    tell current session of current window
-      if (count of theDeletes) > 0 then
-        write text theDeletes newline no
-      end if
-      if (count of theText) > 0 then
-        write text theText newline no
-      end if
-      if shouldReturn is "yes" then
-        write text "" newline yes
-      end if
-    end tell
-  end tell
-end run"#;
+    let deletes_literal = applescript_literal(&deletes);
+    let text_literal = applescript_literal(text);
     let return_flag = if press_return { "yes" } else { "no" };
-    let output = run_osascript(script, &[&deletes, text, return_flag])?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!(
-            "iTerm write failed: {}",
-            stderr.trim().replace('\n', " ")
-        ));
+    let script = format!(
+        r#"tell application "iTerm"
+  tell current session of current window
+    if (count of {deletes_literal}) > 0 then
+      write text {deletes_literal} newline no
+    end if
+    if (count of {text_literal}) > 0 then
+      write text {text_literal} newline no
+    end if
+    if "{return_flag}" is "yes" then
+      write text "" newline yes
+    end if
+  end tell
+end tell"#
+    );
+    match run_applescript(&script) {
+        Ok(()) => Ok(()),
+        Err(first) => {
+            let fallback = script.replace(
+                r#"tell application "iTerm""#,
+                r#"tell application "iTerm2""#,
+            );
+            run_applescript(&fallback).map_err(|second| {
+                anyhow!("{first}; iTerm2 name also failed: {second}")
+            })
+        }
     }
-    Ok(())
 }
 
 pub fn post_command_v_keystroke() -> Result<()> {
@@ -279,24 +331,56 @@ unsafe fn post_key(
     std::thread::sleep(std::time::Duration::from_millis(4));
 }
 
-fn run_osascript(script: &str, args: &[&str]) -> Result<std::process::Output> {
-    let mut command = Command::new("osascript");
-    command.arg("-").args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = command
-        .spawn()
-        .map_err(|error| anyhow!("could not start osascript: {error}"))?;
-    {
-        let stdin = child
-            .stdin
-            .as_mut()
-            .ok_or_else(|| anyhow!("osascript stdin was unavailable"))?;
-        stdin
-            .write_all(script.as_bytes())
-            .map_err(|error| anyhow!("could not send AppleScript: {error}"))?;
+fn run_applescript(source: &str) -> Result<()> {
+    let source = source.to_string();
+    run_on_main(move || {
+        let ns_source = NSString::from_str(&source);
+        let Some(script) = NSAppleScript::initWithSource(NSAppleScript::alloc(), &ns_source) else {
+            return Err(anyhow!("could not build AppleScript"));
+        };
+        let mut error: Option<objc2::rc::Retained<NSDictionary<NSString, AnyObject>>> = None;
+        unsafe {
+            let _ = script.executeAndReturnError(Some(&mut error));
+        }
+        if let Some(error) = error {
+            return Err(anyhow!("{}", applescript_error_message(&error)));
+        }
+        Ok(())
+    })
+}
+
+fn applescript_error_message(error: &NSDictionary<NSString, AnyObject>) -> String {
+    unsafe {
+        for key in [NSAppleScriptErrorMessage, NSAppleScriptErrorBriefMessage] {
+            if let Some(value) = error.objectForKey(key) {
+                if let Some(text) = value.downcast_ref::<NSString>() {
+                    let message = text.to_string();
+                    if !message.is_empty() {
+                        return message;
+                    }
+                }
+            }
+        }
     }
-    child
-        .wait_with_output()
-        .map_err(|error| anyhow!("osascript did not finish: {error}"))
+    "AppleScript failed".to_string()
+}
+
+fn applescript_literal(text: &str) -> String {
+    let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
+}
+
+fn run_on_main<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    if MainThreadMarker::new().is_some() {
+        return work();
+    }
+    let (sender, receiver) = mpsc::channel();
+    DispatchQueue::main().exec_async(move || {
+        let _ = sender.send(work());
+    });
+    receiver
+        .recv()
+        .expect("main queue dropped AppleScript work")
 }
 
 fn cf_string(text: &str) -> CFStringRef {
@@ -364,14 +448,20 @@ fn cf_string_to_rust(value: CFStringRef) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::name_looks_like_iterm;
+    use super::{applescript_literal, bundle_looks_like_iterm, name_looks_like_iterm};
 
     #[test]
     fn recognises_iterm_process_names() {
         assert!(name_looks_like_iterm("iTerm"));
         assert!(name_looks_like_iterm("iTerm2"));
         assert!(name_looks_like_iterm("iTerm.app"));
+        assert!(bundle_looks_like_iterm("com.googlecode.iterm2"));
         assert!(!name_looks_like_iterm("Terminal"));
         assert!(!name_looks_like_iterm("TextEdit"));
+    }
+
+    #[test]
+    fn quotes_applescript_text() {
+        assert_eq!(applescript_literal(r#"say "hi""#), r#""say \"hi\"""#);
     }
 }

@@ -133,8 +133,6 @@ fn run_dictation_controller(
     let mut insert_origin: Option<i64> = None;
     let mut saved_clipboard: Option<String> = None;
     let mut live_ax_insert_works = true;
-    let mut live_iterm_insert = false;
-    let mut live_system_events_insert = false;
 
     loop {
         let command = if recording.is_some() {
@@ -158,26 +156,27 @@ fn run_dictation_controller(
                                             "live AX insert disabled: {error}"
                                         ));
                                         live_ax_insert_works = false;
-                                        live_iterm_insert = focused_app_is_iterm();
-                                        live_system_events_insert = !live_iterm_insert;
                                     }
                                 }
                             }
-                            if live_iterm_insert {
-                                match apply_iterm_text_delta(&inserted_text, &text, false) {
-                                    Ok(()) => inserted_text = text.clone(),
-                                    Err(error) => write_engine_log(&format!(
-                                        "live iTerm insert failed: {error}"
-                                    )),
-                                }
-                            } else if live_system_events_insert {
-                                match apply_system_events_text_delta(&inserted_text, &text, false) {
-                                    Ok(()) => inserted_text = text.clone(),
-                                    Err(error) => {
-                                        write_engine_log(&format!(
+                            if !live_ax_insert_works {
+                                if focused_app_is_iterm() {
+                                    match apply_iterm_text_delta(&inserted_text, &text, false) {
+                                        Ok(()) => inserted_text = text.clone(),
+                                        Err(error) => write_engine_log(&format!(
+                                            "live iTerm insert failed: {error}"
+                                        )),
+                                    }
+                                } else {
+                                    match apply_system_events_text_delta(
+                                        &inserted_text,
+                                        &text,
+                                        false,
+                                    ) {
+                                        Ok(()) => inserted_text = text.clone(),
+                                        Err(error) => write_engine_log(&format!(
                                             "live System Events insert failed: {error}"
-                                        ));
-                                        live_system_events_insert = false;
+                                        )),
                                     }
                                 }
                             }
@@ -211,8 +210,6 @@ fn run_dictation_controller(
                             inserted_text.clear();
                             insert_origin = None;
                             live_ax_insert_works = true;
-                            live_iterm_insert = false;
-                            live_system_events_insert = false;
                             saved_clipboard = read_clipboard_text();
                             #[cfg(target_os = "macos")]
                             write_engine_log(&format!(
@@ -340,10 +337,12 @@ fn focused_app_is_iterm() -> bool {
     {
         match crate::mac_paste::frontmost_app() {
             Some(app) => {
-                let is_iterm = crate::mac_paste::name_looks_like_iterm(&app.name);
+                let is_iterm = app.is_iterm();
                 write_engine_log(&format!(
-                    "front app={} pid={} iterm={is_iterm}",
-                    app.name, app.pid
+                    "front app={} bundle={} pid={} iterm={is_iterm}",
+                    app.name,
+                    app.bundle.as_deref().unwrap_or("-"),
+                    app.pid
                 ));
                 is_iterm
             }
