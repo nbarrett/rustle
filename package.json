@@ -2,12 +2,19 @@
   "name": "rustle",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@tauri-apps/cli": "^2",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1"
   }
 }

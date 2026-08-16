@@ -4,10 +4,13 @@
   "version": "0.1.0",
   "identifier": "com.annix.rustle",
   "build": {
-    "frontendDist": "../ui"
+    "beforeDevCommand": "pnpm exec vite",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm typecheck && pnpm exec vite build",
+    "frontendDist": "../dist"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [
       {
         "label": "settings",

@@ -69,7 +69,7 @@ Config and downloaded models are stored under `~/Library/Application Support/rus
 
 - `core/` - the reusable dictation engine: config, audio capture, Whisper transcription, hotkey listening, keystroke injection, model downloads. Also builds the `rustle-cli` binary.
 - `src-tauri/` - the Tauri menu-bar app: tray icon, settings window, and the commands the UI calls.
-- `ui/` - the settings panel (plain HTML/CSS/JS, no bundler).
+- `ui/` - the settings panel (TypeScript, built with Vite).
 
 ## Roadmap
 

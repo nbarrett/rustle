@@ -34,6 +34,23 @@ jobs:
       - name: Install cmake
         run: brew install cmake
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS tools
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck UI
+        run: pnpm typecheck
+
       - name: Run unit tests
         run: cargo test -p rustle-core --lib
 
