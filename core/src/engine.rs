@@ -1,7 +1,5 @@
 use anyhow::{anyhow, Result};
 use std::sync::atomic::{AtomicBool, Ordering};
-
-static ASKED_FOR_ACCESSIBILITY: AtomicBool = AtomicBool::new(false);
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -214,14 +212,6 @@ fn run_dictation_controller(
                             saved_clipboard = read_clipboard_text();
                             #[cfg(target_os = "macos")]
                             {
-                                if !crate::mac_ax::process_is_trusted()
-                                    && !ASKED_FOR_ACCESSIBILITY.swap(true, Ordering::SeqCst)
-                                {
-                                    let trusted = crate::mac_ax::request_trust_prompt();
-                                    write_engine_log(&format!(
-                                        "requested Accessibility trust trusted={trusted}"
-                                    ));
-                                }
                                 insert_target = crate::mac_paste::insert_target_app();
                                 match &insert_target {
                                     Some(app) => write_engine_log(&format!(

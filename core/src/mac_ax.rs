@@ -22,7 +22,6 @@ struct CFRange {
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn AXIsProcessTrusted() -> bool;
-    fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
     fn AXUIElementCreateSystemWide() -> AXUIElementRef;
     fn AXUIElementCopyAttributeValue(
         element: AXUIElementRef,
@@ -40,14 +39,6 @@ extern "C" {
 
 #[link(name = "CoreFoundation", kind = "framework")]
 extern "C" {
-    fn CFDictionaryCreate(
-        allocator: *const c_void,
-        keys: *const *const c_void,
-        values: *const *const c_void,
-        num_values: isize,
-        key_callbacks: *const c_void,
-        value_callbacks: *const c_void,
-    ) -> *const c_void;
     fn CFStringCreateWithBytes(
         allocator: *const c_void,
         bytes: *const u8,
@@ -58,40 +49,8 @@ extern "C" {
     fn CFRelease(cf: CFTypeRef);
 }
 
-extern "C" {
-    static kCFBooleanTrue: *const c_void;
-}
-
 pub fn process_is_trusted() -> bool {
     unsafe { AXIsProcessTrusted() }
-}
-
-pub fn request_trust_prompt() -> bool {
-    unsafe {
-        let key = cf_string("AXTrustedCheckOptionPrompt");
-        if key.is_null() {
-            return AXIsProcessTrusted();
-        }
-        let keys = [key as *const c_void];
-        let values = [kCFBooleanTrue];
-        let options = CFDictionaryCreate(
-            ptr::null(),
-            keys.as_ptr(),
-            values.as_ptr(),
-            1,
-            ptr::null(),
-            ptr::null(),
-        );
-        let trusted = if options.is_null() {
-            AXIsProcessTrusted()
-        } else {
-            let trusted = AXIsProcessTrustedWithOptions(options);
-            CFRelease(options);
-            trusted
-        };
-        CFRelease(key);
-        trusted
-    }
 }
 
 pub fn replace_in_focused_field(origin_utf16: Option<i64>, previous: &str, current: &str) -> Result<i64> {
