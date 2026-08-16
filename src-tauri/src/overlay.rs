@@ -52,19 +52,19 @@ impl DictationOverlay {
                 set_tray(tray, None, Some("Rustle · Listening"));
                 self.show_message("●  Listening…");
             }
-            DictationStatus::Partial(text) => {
+            DictationStatus::Partial(_) => {
                 self.bump_generation();
-                set_tray(tray, None, Some(&format!("Rustle · {text}")));
-                self.show_message(&format!("●  {text}"));
+                set_tray(tray, None, Some("Rustle · Listening"));
+                self.show_message("●  Listening…");
             }
             DictationStatus::Transcribing => {
                 self.bump_generation();
                 set_tray(tray, None, Some("Rustle · Transcribing"));
+                self.show_message("●  Transcribing…");
             }
-            DictationStatus::Typed(text) => {
-                set_tray(tray, None, Some(&format!("Rustle · {text}")));
-                self.show_message(text);
-                self.schedule_hide(app, tray);
+            DictationStatus::Typed(_) => {
+                set_tray(tray, None, Some("Rustle"));
+                self.hide();
             }
             DictationStatus::Failed(message) => {
                 set_tray(tray, Some("Error"), Some(&format!("Rustle · {message}")));

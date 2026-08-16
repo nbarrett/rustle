@@ -53,7 +53,6 @@ const elements = {
   downloadStatus: requiredElement<HTMLParagraphElement>("download-status"),
   enterToggle: requiredElement<HTMLInputElement>("enter-toggle"),
   launchToggle: requiredElement<HTMLInputElement>("launch-toggle"),
-  liveTranscript: requiredElement<HTMLTextAreaElement>("live-transcript"),
   historyList: requiredElement<HTMLDivElement>("history-list"),
   clearHistory: requiredElement<HTMLButtonElement>("clear-history"),
   correctionsList: requiredElement<HTMLDivElement>("corrections-list"),
@@ -280,27 +279,19 @@ function setInsertNote(text: string | undefined): void {
   fitWindowToContent();
 }
 
-function showTranscript(text: string, live: boolean): void {
-  elements.liveTranscript.value = text;
-  elements.liveTranscript.classList.toggle("is-live", live);
-}
-
 function applyStatusEvent(payload: DictationStatusEvent): void {
   switch (payload.kind) {
     case "listening":
       setStatus("Listening", "status-live");
-      showTranscript("Listening…", true);
       break;
     case "partial":
       setStatus("Listening", "status-live");
-      showTranscript(payload.text, true);
       break;
     case "transcribing":
       setStatus("Transcribing", "status-work");
       break;
     case "typed":
       setStatus("Typed", "status-live");
-      showTranscript(payload.text, false);
       setInsertNote("");
       addHistoryEntry(payload.text);
       break;
