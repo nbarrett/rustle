@@ -431,8 +431,8 @@ fn insert_text_for_target(
             }
         }
         if target.is_some_and(|app| app.is_iterm()) {
-            if is_live {
-                write_engine_log("iterm live insert skipped; waiting for release");
+            if is_live && !current.starts_with(previous) {
+                write_engine_log("iterm live insert skipped; transcript was revised");
                 return Ok(InsertKind::Unchanged);
             }
             apply_iterm_text_delta(
