@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Result};
 use std::sync::atomic::{AtomicBool, Ordering};
+
+static ASKED_FOR_ACCESSIBILITY: AtomicBool = AtomicBool::new(false);
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -212,16 +214,25 @@ fn run_dictation_controller(
                             saved_clipboard = read_clipboard_text();
                             #[cfg(target_os = "macos")]
                             {
+                                if !crate::mac_ax::process_is_trusted()
+                                    && !ASKED_FOR_ACCESSIBILITY.swap(true, Ordering::SeqCst)
+                                {
+                                    let trusted = crate::mac_ax::request_trust_prompt();
+                                    write_engine_log(&format!(
+                                        "requested Accessibility trust trusted={trusted}"
+                                    ));
+                                }
                                 insert_target = crate::mac_paste::insert_target_app();
                                 match &insert_target {
                                     Some(app) => write_engine_log(&format!(
-                                        "AXIsProcessTrusted={} insert target={} bundle={} pid={} iterm={} session={}",
+                                        "AXIsProcessTrusted={} insert target={} bundle={} pid={} iterm={} session={} session_name={}",
                                         crate::mac_ax::process_is_trusted(),
                                         app.name,
                                         app.bundle.as_deref().unwrap_or("-"),
                                         app.pid,
                                         app.is_iterm(),
-                                        app.session_id.as_deref().unwrap_or("-")
+                                        app.session_id.as_deref().unwrap_or("-"),
+                                        app.session_name.as_deref().unwrap_or("-")
                                     )),
                                     None => write_engine_log(&format!(
                                         "AXIsProcessTrusted={} insert target unavailable",
@@ -402,6 +413,32 @@ fn insert_text_for_target(
         if target.is_some_and(|app| app.is_ours()) {
             write_engine_log("insert skipped; no other app to type into");
             return Ok(InsertKind::OwnUi);
+        }
+        let prefix = shared_prefix_char_count(previous, current);
+        let addition: String = current.chars().skip(prefix).collect();
+        if crate::mac_ax::process_is_trusted() {
+            if let Some(app) = target {
+                if let Err(error) = crate::mac_paste::activate_pid(app.pid) {
+                    write_engine_log(&format!("activate failed: {error}"));
+                }
+                if prefix < previous.chars().count() {
+                    crate::mac_paste::post_delete_keystrokes(
+                        previous.chars().count() - prefix,
+                    )?;
+                }
+                crate::mac_paste::post_unicode_to_pid(app.pid, &addition)?;
+                if press_return {
+                    crate::mac_paste::post_return_keystroke()?;
+                }
+                write_engine_log(&format!(
+                    "unicode insert used pid={} chars={} return={press_return} text={:?}",
+                    app.pid,
+                    addition.chars().count(),
+                    addition
+                ));
+                write_insert_receipt(app.session_id.as_deref(), &addition, press_return);
+                return Ok(InsertKind::Keystroke);
+            }
         }
         if target.is_some_and(|app| app.is_iterm()) {
             if is_live {

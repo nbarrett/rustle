@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use dispatch2::DispatchQueue;
 use objc2::runtime::AnyObject;
 use objc2::{AnyThread, MainThreadMarker};
-use objc2_app_kit::NSWorkspace;
+use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication, NSWorkspace};
 use objc2_foundation::{
     NSAppleEventDescriptor, NSAppleScript, NSAppleScriptErrorBriefMessage,
     NSAppleScriptErrorMessage, NSDictionary, NSString,
@@ -41,6 +41,7 @@ extern "C" {
     fn CGEventSetFlags(event: CGEventRef, flags: u64);
     fn CGEventPost(tap: u32, event: CGEventRef);
     fn CGEventPostToPid(pid: i32, event: CGEventRef);
+    fn CGEventKeyboardSetUnicodeString(event: CGEventRef, length: usize, string: *const u16);
     fn CGWindowListCopyWindowInfo(option: u32, relative_to_window: u32) -> CFArrayRef;
 }
 
@@ -73,6 +74,7 @@ pub struct FrontApp {
     pub bundle: Option<String>,
     pub pid: i32,
     pub session_id: Option<String>,
+    pub session_name: Option<String>,
 }
 
 pub fn name_looks_like_iterm(name: &str) -> bool {
@@ -122,27 +124,35 @@ pub fn insert_target_app() -> Option<FrontApp> {
         window_list_front_app()
     }?;
     if app.is_iterm() {
-        app.session_id = current_iterm_session_id();
+        if let Some((session_id, session_name)) = pin_front_iterm_session() {
+            app.session_id = Some(session_id);
+            app.session_name = Some(session_name);
+        }
     }
     Some(app)
 }
 
-pub fn current_iterm_session_id() -> Option<String> {
-    let from_iterm = run_applescript_string(
-        r#"tell application "iTerm" to get id of current session of current window"#,
-    );
-    let raw = match from_iterm {
+pub fn pin_front_iterm_session() -> Option<(String, String)> {
+    let script = r#"tell application "iTerm"
+  set theWindow to current window
+  set theSession to current session of theWindow
+  return (id of theSession) & tab & (name of theSession) & tab & (name of theWindow)
+end tell"#;
+    let raw = match run_applescript_string(script) {
         Ok(value) => value,
-        Err(_) => run_applescript_string(
-            r#"tell application "iTerm2" to get id of current session of current window"#,
-        )
+        Err(_) => run_applescript_string(&script.replace(
+            r#"tell application "iTerm""#,
+            r#"tell application "iTerm2""#,
+        ))
         .ok()?,
     };
-    let trimmed = raw.trim().to_string();
-    if trimmed.is_empty() {
+    let mut parts = raw.split('\t');
+    let session_id = parts.next()?.trim().to_string();
+    let session_name = parts.next().unwrap_or("").trim().to_string();
+    if session_id.is_empty() {
         None
     } else {
-        Some(trimmed)
+        Some((session_id, session_name))
     }
 }
 
@@ -163,6 +173,7 @@ fn workspace_front_app() -> Option<FrontApp> {
         bundle,
         pid,
         session_id: None,
+        session_name: None,
     })
 }
 
@@ -173,6 +184,7 @@ fn name_is_chrome_ui(name: &str) -> bool {
         "window server"
             | "dock"
             | "control center"
+            | "control centre"
             | "notification center"
             | "notification centre"
             | "spotlight"
@@ -222,6 +234,7 @@ fn window_list_front_app() -> Option<FrontApp> {
                 bundle: None,
                 pid,
                 session_id: None,
+                session_name: None,
             });
             break;
         }
@@ -349,6 +362,44 @@ pub fn post_delete_keystrokes(count: usize) -> Result<()> {
         for _ in 0..count {
             post_key(source, KEYCODE_DELETE, true, 0, target_pid);
             post_key(source, KEYCODE_DELETE, false, 0, target_pid);
+        }
+        CFRelease(source as *const c_void);
+    }
+    Ok(())
+}
+
+#[allow(deprecated)]
+pub fn activate_pid(pid: i32) -> Result<()> {
+    let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) else {
+        return Err(anyhow!("could not find process {pid}"));
+    };
+    if !app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps) {
+        return Err(anyhow!("could not activate process {pid}"));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    Ok(())
+}
+
+pub fn post_unicode_to_pid(pid: i32, text: &str) -> Result<()> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    let encoded: Vec<u16> = text.encode_utf16().collect();
+    unsafe {
+        let source = create_event_source()?;
+        let down = CGEventCreateKeyboardEvent(source, 0, true);
+        if down.is_null() {
+            CFRelease(source as *const c_void);
+            return Err(anyhow!("failed to create unicode key event"));
+        }
+        CGEventKeyboardSetUnicodeString(down, encoded.len(), encoded.as_ptr());
+        CGEventPostToPid(pid, down);
+        CFRelease(down as *const c_void);
+        let up = CGEventCreateKeyboardEvent(source, 0, false);
+        if !up.is_null() {
+            CGEventKeyboardSetUnicodeString(up, encoded.len(), encoded.as_ptr());
+            CGEventPostToPid(pid, up);
+            CFRelease(up as *const c_void);
         }
         CFRelease(source as *const c_void);
     }
@@ -543,5 +594,12 @@ mod tests {
     #[test]
     fn quotes_applescript_text() {
         assert_eq!(applescript_literal(r#"say "hi""#), r#""say \"hi\"""#);
+    }
+
+    #[test]
+    fn skips_control_centre_as_a_typing_target() {
+        assert!(super::name_is_chrome_ui("Control Centre"));
+        assert!(super::name_is_chrome_ui("Control Center"));
+        assert!(!super::name_is_chrome_ui("iTerm2"));
     }
 }
