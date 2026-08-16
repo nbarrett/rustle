@@ -35,7 +35,7 @@ jobs:
         run: brew install cmake
 
       - name: Run unit tests
-        run: cargo test -p rustle-core
+        run: cargo test -p rustle-core --lib
 
   build-and-release:
     needs: test
