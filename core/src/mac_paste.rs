@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use dispatch2::DispatchQueue;
 use objc2::runtime::AnyObject;
-use objc2::{AnyThread, MainThreadMarker};
+use objc2::{msg_send, AnyThread, MainThreadMarker};
 use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication, NSWorkspace};
 use objc2_foundation::{
     NSAppleEventDescriptor, NSAppleScript, NSAppleScriptErrorBriefMessage,
@@ -136,7 +136,7 @@ pub fn pin_front_iterm_session() -> Option<(String, String)> {
     let script = r#"tell application "iTerm"
   set theWindow to current window
   set theSession to current session of theWindow
-  return (id of theSession) & tab & (name of theSession) & tab & (name of theWindow)
+  return (id of theSession) & "|||" & (name of theSession) & "|||" & (name of theWindow)
 end tell"#;
     let raw = match run_applescript_string(script) {
         Ok(value) => value,
@@ -146,7 +146,7 @@ end tell"#;
         ))
         .ok()?,
     };
-    let mut parts = raw.split('\t');
+    let mut parts = raw.split("|||");
     let session_id = parts.next()?.trim().to_string();
     let session_name = parts.next().unwrap_or("").trim().to_string();
     if session_id.is_empty() {
@@ -274,6 +274,92 @@ end tell"#,
 
 pub fn post_system_events_command_v() -> Result<()> {
     run_applescript(r#"tell application "System Events" to keystroke "v" using command down"#)
+}
+
+pub fn open_probe_iterm_session() -> Result<(String, String)> {
+    let script = r#"tell application "iTerm"
+  set newWindow to create window with default profile
+  delay 0.4
+  set theSession to current session of newWindow
+  return (id of theSession) & "|||" & (name of theSession)
+end tell"#;
+    let raw = run_applescript_string(script).or_else(|_| {
+        run_applescript_string(&script.replace(
+            r#"tell application "iTerm""#,
+            r#"tell application "iTerm2""#,
+        ))
+    })?;
+    let mut parts = raw.split("|||");
+    let session_id = parts
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let session_name = parts.next().unwrap_or("").trim().to_string();
+    if session_id.is_empty() {
+        return Err(anyhow!("could not open a probe iTerm session"));
+    }
+    Ok((session_id, session_name))
+}
+
+pub fn iterm_session_text(session_id: &str) -> Result<String> {
+    if session_id.is_empty() {
+        return Err(anyhow!("no iTerm session id"));
+    }
+    let session_literal = applescript_literal(session_id);
+    let script = format!(
+        r#"tell application "iTerm"
+  set targetId to {session_literal}
+  set targetSession to missing value
+  repeat with aWindow in windows
+    repeat with aTab in tabs of aWindow
+      repeat with aSession in sessions of aTab
+        if id of aSession is targetId then
+          set targetSession to aSession
+        end if
+      end repeat
+    end repeat
+  end repeat
+  if targetSession is missing value then
+    error "probe session was not found"
+  end if
+  return contents of targetSession
+end tell"#
+    );
+    run_applescript_string(&script).or_else(|_| {
+        run_applescript_string(&script.replace(
+            r#"tell application "iTerm""#,
+            r#"tell application "iTerm2""#,
+        ))
+    })
+}
+
+pub fn close_iterm_session(session_id: &str) -> Result<()> {
+    if session_id.is_empty() {
+        return Ok(());
+    }
+    let session_literal = applescript_literal(session_id);
+    let script = format!(
+        r#"tell application "iTerm"
+  set targetId to {session_literal}
+  repeat with aWindow in windows
+    repeat with aTab in tabs of aWindow
+      repeat with aSession in sessions of aTab
+        if id of aSession is targetId then
+          close aWindow
+          return
+        end if
+      end repeat
+    end repeat
+  end repeat
+end tell"#
+    );
+    run_applescript(&script).or_else(|_| {
+        run_applescript(&script.replace(
+            r#"tell application "iTerm""#,
+            r#"tell application "iTerm2""#,
+        ))
+    })
 }
 
 pub fn apply_iterm_session_delta(
@@ -470,13 +556,13 @@ fn execute_applescript(source: &str) -> Result<Option<String>> {
             return Err(anyhow!("could not build AppleScript"));
         };
         let mut error: Option<objc2::rc::Retained<NSDictionary<NSString, AnyObject>>> = None;
-        let descriptor: objc2::rc::Retained<NSAppleEventDescriptor> = unsafe {
-            script.executeAndReturnError(Some(&mut error))
+        let descriptor: Option<objc2::rc::Retained<NSAppleEventDescriptor>> = unsafe {
+            msg_send![&script, executeAndReturnError: Some(&mut error)]
         };
         if let Some(error) = error {
             return Err(anyhow!("{}", applescript_error_message(&error)));
         }
-        Ok(descriptor.stringValue().map(|value| value.to_string()))
+        Ok(descriptor.and_then(|value| value.stringValue().map(|text| text.to_string())))
     })
 }
 

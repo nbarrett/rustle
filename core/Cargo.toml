@@ -14,6 +14,11 @@ name = "rustle-cli"
 path = "src/bin/rustle_cli.rs"
 required-features = ["runtime"]
 
+[[bin]]
+name = "rustle-probe"
+path = "src/bin/rustle_probe.rs"
+required-features = ["runtime"]
+
 [features]
 default = ["runtime"]
 runtime = ["dep:whisper-rs", "dep:cpal", "dep:arboard"]
