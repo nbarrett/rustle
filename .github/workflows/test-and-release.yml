@@ -11,7 +11,7 @@ on:
         type: boolean
         default: false
       tag:
-        description: Release tag such as v0.1.1 (required when publish is true)
+        description: Must match package.json as v0.1.1. Leave empty to use package.json.
         type: string
         required: false
 
@@ -45,18 +45,52 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: write
-    env:
-      RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
     steps:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Require a version tag
+      - name: Align release with package.json
+        id: version
         run: |
-          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            echo "Need a tag like v0.1.1, got '${RELEASE_TAG}'"
+          set -euo pipefail
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          EXPECTED_TAG="v${PACKAGE_VERSION}"
+          REQUESTED_TAG="${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}"
+          if [[ -z "${REQUESTED_TAG}" ]]; then
+            REQUESTED_TAG="${EXPECTED_TAG}"
+          fi
+          if [[ "${REQUESTED_TAG}" != "${EXPECTED_TAG}" ]]; then
+            echo "GitHub tag '${REQUESTED_TAG}' does not match package.json version '${PACKAGE_VERSION}'."
+            echo "Bump package.json (and tauri.conf.json) to match, or tag ${EXPECTED_TAG}."
             exit 1
           fi
+          python3 - <<PY
+          import json
+          from pathlib import Path
+          version = "${PACKAGE_VERSION}"
+          tauri = Path("src-tauri/tauri.conf.json")
+          data = json.loads(tauri.read_text())
+          data["version"] = version
+          tauri.write_text(json.dumps(data, indent=2) + "\n")
+          for cargo in [Path("src-tauri/Cargo.toml"), Path("core/Cargo.toml")]:
+              text = cargo.read_text()
+              lines = text.splitlines(keepends=True)
+              out = []
+              seen_package = False
+              replaced = False
+              for line in lines:
+                  if line.startswith("[package]"):
+                      seen_package = True
+                  if seen_package and line.startswith("version = ") and not replaced:
+                      out.append(f'version = "{version}"\n')
+                      replaced = True
+                      continue
+                  out.append(line)
+              cargo.write_text("".join(out))
+          PY
+          echo "RELEASE_TAG=${EXPECTED_TAG}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> "${GITHUB_ENV}"
+          echo "Using package.json version ${PACKAGE_VERSION} (${EXPECTED_TAG})"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
