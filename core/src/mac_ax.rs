@@ -68,6 +68,11 @@ pub fn replace_in_focused_field(origin_utf16: Option<i64>, previous: &str, curre
         );
         CFRelease(focused_attribute);
         CFRelease(system as CFTypeRef);
+        if focused_status == AX_ERROR_API_DISABLED {
+            return Err(anyhow!(
+                "could not read the focused field (AX {AX_ERROR_API_DISABLED})"
+            ));
+        }
         if focused_status != AX_ERROR_SUCCESS || focused.is_null() {
             return Err(anyhow!(
                 "could not read the focused field (AX {focused_status})"

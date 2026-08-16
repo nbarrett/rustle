@@ -1,3 +1,11 @@
 [workspace]
 members = ["core", "src-tauri"]
 resolver = "2"
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

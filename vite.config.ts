@@ -12,5 +12,6 @@ export default defineConfig({
     outDir: "../dist",
     emptyOutDir: true,
     target: "es2022",
+    reportCompressedSize: false,
   },
 });

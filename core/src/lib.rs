@@ -1,12 +1,17 @@
-pub mod audio;
 pub mod config;
 pub mod download;
-pub mod engine;
 pub mod hotkey;
-#[cfg(target_os = "macos")]
-pub mod mac_ax;
-#[cfg(target_os = "macos")]
-pub mod mac_hotkey;
-#[cfg(target_os = "macos")]
-pub mod mac_paste;
+
+#[cfg(feature = "runtime")]
+pub mod audio;
+#[cfg(feature = "runtime")]
+pub mod engine;
+#[cfg(feature = "runtime")]
 pub mod transcribe;
+
+#[cfg(all(feature = "runtime", target_os = "macos"))]
+pub mod mac_ax;
+#[cfg(all(feature = "runtime", target_os = "macos"))]
+pub mod mac_hotkey;
+#[cfg(all(feature = "runtime", target_os = "macos"))]
+pub mod mac_paste;

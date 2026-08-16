@@ -18,21 +18,27 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: macos-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
 
-      - name: Install cmake
-        run: brew install cmake
+      - name: Install cmake if missing
+        run: command -v cmake >/dev/null || brew install cmake
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -52,7 +58,7 @@ jobs:
         run: pnpm typecheck
 
       - name: Run unit tests
-        run: cargo test -p rustle-core --lib
+        run: cargo test -p rustle-core --lib --no-default-features
 
   build-and-release:
     needs: test
@@ -64,7 +70,7 @@ jobs:
       contents: write
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Align release with package.json
         id: version
@@ -115,8 +121,8 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install cmake
-        run: brew install cmake
+      - name: Install cmake if missing
+        run: command -v cmake >/dev/null || brew install cmake
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
