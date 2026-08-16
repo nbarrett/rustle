@@ -7,7 +7,7 @@ use std::time::Duration;
 
 const LIVE_TRANSCRIPTION_INTERVAL: Duration = Duration::from_millis(450);
 const LIVE_TRANSCRIPT_MINIMUM_SECONDS: f32 = 0.35;
-const CLIPBOARD_SETTLE: Duration = Duration::from_millis(30);
+const CLIPBOARD_SETTLE: Duration = Duration::from_millis(50);
 const DELETE_SETTLE: Duration = Duration::from_millis(8);
 
 use crate::audio::{
@@ -134,6 +134,7 @@ fn run_dictation_controller(
     let mut saved_clipboard: Option<String> = None;
     let mut live_ax_insert_works = true;
     let mut live_iterm_insert = false;
+    let mut live_system_events_insert = false;
 
     loop {
         let command = if recording.is_some() {
@@ -158,6 +159,7 @@ fn run_dictation_controller(
                                         ));
                                         live_ax_insert_works = false;
                                         live_iterm_insert = focused_app_is_iterm();
+                                        live_system_events_insert = !live_iterm_insert;
                                     }
                                 }
                             }
@@ -167,6 +169,16 @@ fn run_dictation_controller(
                                     Err(error) => write_engine_log(&format!(
                                         "live iTerm insert failed: {error}"
                                     )),
+                                }
+                            } else if live_system_events_insert {
+                                match apply_system_events_text_delta(&inserted_text, &text, false) {
+                                    Ok(()) => inserted_text = text.clone(),
+                                    Err(error) => {
+                                        write_engine_log(&format!(
+                                            "live System Events insert failed: {error}"
+                                        ));
+                                        live_system_events_insert = false;
+                                    }
                                 }
                             }
                             report_status(DictationStatus::Partial(text));
@@ -200,6 +212,7 @@ fn run_dictation_controller(
                             insert_origin = None;
                             live_ax_insert_works = true;
                             live_iterm_insert = false;
+                            live_system_events_insert = false;
                             saved_clipboard = read_clipboard_text();
                             #[cfg(target_os = "macos")]
                             write_engine_log(&format!(
@@ -296,6 +309,13 @@ fn transcribe_and_type(
             InsertKind::Unchanged if focused_app_is_iterm() => {
                 apply_iterm_text_delta("", "", true)?;
             }
+            InsertKind::SystemEvents | InsertKind::Unchanged => {
+                if let Err(error) = apply_system_events_text_delta("", "", true) {
+                    write_engine_log(&format!("System Events return failed: {error}"));
+                    thread::sleep(CLIPBOARD_SETTLE);
+                    post_return_keystroke()?;
+                }
+            }
             _ => {
                 thread::sleep(CLIPBOARD_SETTLE);
                 post_return_keystroke()?;
@@ -311,6 +331,7 @@ enum InsertKind {
     Unchanged,
     Accessibility,
     Iterm,
+    SystemEvents,
     Keystroke,
 }
 
@@ -335,6 +356,30 @@ fn focused_app_is_iterm() -> bool {
     #[cfg(not(target_os = "macos"))]
     {
         false
+    }
+}
+
+fn apply_system_events_text_delta(
+    previous: &str,
+    current: &str,
+    press_return: bool,
+) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        let prefix = shared_prefix_char_count(previous, current);
+        let delete_count = previous.chars().count().saturating_sub(prefix);
+        let addition: String = current.chars().skip(prefix).collect();
+        crate::mac_paste::apply_system_events_delta(delete_count, &addition, press_return)?;
+        write_engine_log(&format!(
+            "system events insert used deletes={delete_count} chars={} return={press_return}",
+            addition.chars().count()
+        ));
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (previous, current, press_return);
+        Err(anyhow!("System Events insert needs macOS"))
     }
 }
 
@@ -427,6 +472,12 @@ fn sync_focused_text_to_transcript(
                 }
             }
         }
+        match apply_system_events_text_delta(previous, current, false) {
+            Ok(()) => return Ok(InsertKind::SystemEvents),
+            Err(error) => {
+                write_engine_log(&format!("system events insert failed: {error}"));
+            }
+        }
     }
     let prefix = shared_prefix_char_count(previous, current);
     let delete_count = previous.chars().count().saturating_sub(prefix);
@@ -468,6 +519,16 @@ fn paste_text(text: &str) -> Result<()> {
         .set_text(text.to_string())
         .map_err(|error| anyhow!("failed to set clipboard: {error}"))?;
     thread::sleep(CLIPBOARD_SETTLE);
+    #[cfg(target_os = "macos")]
+    {
+        match crate::mac_paste::post_system_events_command_v() {
+            Ok(()) => {
+                write_engine_log("system events paste used");
+                return Ok(());
+            }
+            Err(error) => write_engine_log(&format!("system events paste failed: {error}")),
+        }
+    }
     post_paste_keystroke()
 }
 

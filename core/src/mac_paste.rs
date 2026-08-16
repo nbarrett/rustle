@@ -33,6 +33,7 @@ extern "C" {
     ) -> CGEventRef;
     fn CGEventSetFlags(event: CGEventRef, flags: u64);
     fn CGEventPost(tap: u32, event: CGEventRef);
+    fn CGEventPostToPid(pid: i32, event: CGEventRef);
     fn CGWindowListCopyWindowInfo(option: u32, relative_to_window: u32) -> CFArrayRef;
 }
 
@@ -114,6 +115,56 @@ pub fn frontmost_app() -> Option<FrontApp> {
     }
 }
 
+pub fn apply_system_events_delta(
+    backspace_count: usize,
+    text: &str,
+    press_return: bool,
+) -> Result<()> {
+    if backspace_count == 0 && text.is_empty() && !press_return {
+        return Ok(());
+    }
+    let script = r#"on run argv
+  set theDeletes to item 1 of argv as integer
+  set theText to item 2 of argv
+  set shouldReturn to item 3 of argv
+  tell application "System Events"
+    repeat theDeletes times
+      key code 51
+    end repeat
+    if (count of theText) > 0 then
+      keystroke theText
+    end if
+    if shouldReturn is "yes" then
+      key code 36
+    end if
+  end tell
+end run"#;
+    let deletes = backspace_count.to_string();
+    let return_flag = if press_return { "yes" } else { "no" };
+    let output = run_osascript(script, &[&deletes, text, return_flag])?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "System Events type failed: {}",
+            stderr.trim().replace('\n', " ")
+        ));
+    }
+    Ok(())
+}
+
+pub fn post_system_events_command_v() -> Result<()> {
+    let script = r#"tell application "System Events" to keystroke "v" using command down"#;
+    let output = run_osascript(script, &[])?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "System Events paste failed: {}",
+            stderr.trim().replace('\n', " ")
+        ));
+    }
+    Ok(())
+}
+
 pub fn apply_iterm_session_delta(
     backspace_count: usize,
     text: &str,
@@ -154,12 +205,13 @@ end run"#;
 }
 
 pub fn post_command_v_keystroke() -> Result<()> {
+    let target_pid = frontmost_app().map(|app| app.pid);
     unsafe {
         let source = create_event_source()?;
-        post_key(source, KEYCODE_COMMAND, true, EVENT_FLAG_COMMAND);
-        post_key(source, KEYCODE_ANSI_V, true, EVENT_FLAG_COMMAND);
-        post_key(source, KEYCODE_ANSI_V, false, EVENT_FLAG_COMMAND);
-        post_key(source, KEYCODE_COMMAND, false, 0);
+        post_key(source, KEYCODE_COMMAND, true, EVENT_FLAG_COMMAND, target_pid);
+        post_key(source, KEYCODE_ANSI_V, true, EVENT_FLAG_COMMAND, target_pid);
+        post_key(source, KEYCODE_ANSI_V, false, EVENT_FLAG_COMMAND, target_pid);
+        post_key(source, KEYCODE_COMMAND, false, 0, target_pid);
         CFRelease(source as *const c_void);
     }
     Ok(())
@@ -169,11 +221,12 @@ pub fn post_delete_keystrokes(count: usize) -> Result<()> {
     if count == 0 {
         return Ok(());
     }
+    let target_pid = frontmost_app().map(|app| app.pid);
     unsafe {
         let source = create_event_source()?;
         for _ in 0..count {
-            post_key(source, KEYCODE_DELETE, true, 0);
-            post_key(source, KEYCODE_DELETE, false, 0);
+            post_key(source, KEYCODE_DELETE, true, 0, target_pid);
+            post_key(source, KEYCODE_DELETE, false, 0, target_pid);
         }
         CFRelease(source as *const c_void);
     }
@@ -181,10 +234,11 @@ pub fn post_delete_keystrokes(count: usize) -> Result<()> {
 }
 
 pub fn post_return_keystroke() -> Result<()> {
+    let target_pid = frontmost_app().map(|app| app.pid);
     unsafe {
         let source = create_event_source()?;
-        post_key(source, KEYCODE_RETURN, true, 0);
-        post_key(source, KEYCODE_RETURN, false, 0);
+        post_key(source, KEYCODE_RETURN, true, 0, target_pid);
+        post_key(source, KEYCODE_RETURN, false, 0, target_pid);
         CFRelease(source as *const c_void);
     }
     Ok(())
@@ -204,14 +258,25 @@ fn create_event_source() -> Result<CGEventSourceRef> {
     }
 }
 
-unsafe fn post_key(source: CGEventSourceRef, keycode: u16, key_down: bool, flags: u64) {
+unsafe fn post_key(
+    source: CGEventSourceRef,
+    keycode: u16,
+    key_down: bool,
+    flags: u64,
+    target_pid: Option<i32>,
+) {
     let event = CGEventCreateKeyboardEvent(source, keycode, key_down);
     if event.is_null() {
         return;
     }
     CGEventSetFlags(event, flags);
-    CGEventPost(HID_EVENT_TAP, event);
+    if let Some(pid) = target_pid {
+        CGEventPostToPid(pid, event);
+    } else {
+        CGEventPost(HID_EVENT_TAP, event);
+    }
     CFRelease(event as *const c_void);
+    std::thread::sleep(std::time::Duration::from_millis(4));
 }
 
 fn run_osascript(script: &str, args: &[&str]) -> Result<std::process::Output> {
@@ -227,7 +292,7 @@ fn run_osascript(script: &str, args: &[&str]) -> Result<std::process::Output> {
             .ok_or_else(|| anyhow!("osascript stdin was unavailable"))?;
         stdin
             .write_all(script.as_bytes())
-            .map_err(|error| anyhow!("could not send iTerm script: {error}"))?;
+            .map_err(|error| anyhow!("could not send AppleScript: {error}"))?;
     }
     child
         .wait_with_output()
