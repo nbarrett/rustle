@@ -7,74 +7,99 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="panel">
+    <main class="app">
       <header class="masthead">
-        <h1>Rustle</h1>
+        <div class="brand">
+          <h1>Rustle</h1>
+          <span id="app-version" class="app-version"></span>
+        </div>
         <span id="status-pill" class="status-pill status-idle">Idle</span>
       </header>
 
-      <section class="field">
-        <label class="field-label" for="dictation-toggle">Dictation</label>
-        <label class="switch">
-          <input type="checkbox" id="dictation-toggle" checked />
-          <span class="switch-track"></span>
-          <span class="switch-caption" id="dictation-caption">Listening for the hotkey</span>
-        </label>
-      </section>
+      <nav class="tabs">
+        <button class="tab is-active" data-tab="dictation" type="button">Dictation</button>
+        <button class="tab" data-tab="history" type="button">History</button>
+      </nav>
 
-      <section class="field">
-        <span class="field-label">Live transcript</span>
-        <textarea
-          id="live-transcript"
-          class="transcript"
-          readonly
-          rows="3"
-          placeholder="Hold your key and speak - your words appear here as you talk."
-        ></textarea>
-      </section>
+      <div class="body">
+        <section class="tab-panel is-active" id="panel-dictation">
+          <div class="field">
+            <span class="field-label">Live transcript</span>
+            <textarea
+              id="live-transcript"
+              class="transcript"
+              readonly
+              rows="3"
+              placeholder="Hold your key and speak - what Rustle hears appears here."
+            ></textarea>
+          </div>
 
-      <section class="field">
-        <label class="field-label" for="hotkey-select">Push-to-talk key</label>
-        <select id="hotkey-select"></select>
-        <p class="field-hint">Hold to talk, release to type into the focused app.</p>
-      </section>
+          <div class="field">
+            <label class="field-label" for="dictation-toggle">Dictation</label>
+            <label class="switch">
+              <input type="checkbox" id="dictation-toggle" checked />
+              <span class="switch-track"></span>
+              <span class="switch-caption" id="dictation-caption">Listening for the hotkey</span>
+            </label>
+          </div>
 
-      <section class="field">
-        <label class="field-label" for="microphone-select">Microphone</label>
-        <select id="microphone-select"></select>
-      </section>
+          <div class="field">
+            <label class="field-label" for="hotkey-select">Push-to-talk key</label>
+            <select id="hotkey-select"></select>
+            <p class="field-hint">Hold to talk, release to type into the focused app.</p>
+          </div>
 
-      <section class="field">
-        <label class="field-label" for="model-select">Model</label>
-        <div class="inline-row">
-          <select id="model-select"></select>
-          <button id="model-download" class="secondary" type="button" hidden>
-            Download
-          </button>
-        </div>
-        <p class="field-hint" id="download-status"></p>
-      </section>
+          <div class="field">
+            <label class="field-label" for="microphone-select">Microphone</label>
+            <select id="microphone-select"></select>
+          </div>
 
-      <section class="field">
-        <span class="field-label">Word corrections</span>
-        <p class="field-hint">Fix words Whisper mishears. Left is what it heard, right is what to write instead.</p>
-        <div id="corrections-list" class="corrections-list"></div>
-        <button id="add-correction" class="secondary" type="button">Add correction</button>
-      </section>
+          <div class="field">
+            <label class="field-label" for="model-select">Model</label>
+            <div class="inline-row">
+              <select id="model-select"></select>
+              <button id="model-download" class="secondary" type="button" hidden>Download</button>
+            </div>
+            <p class="field-hint" id="download-status"></p>
+          </div>
 
-      <section class="field">
-        <label class="field-label" for="launch-toggle">Startup</label>
-        <label class="switch">
-          <input type="checkbox" id="launch-toggle" />
-          <span class="switch-track"></span>
-          <span class="switch-caption">Launch Rustle at login</span>
-        </label>
-      </section>
+          <div class="field">
+            <span class="field-label">Word corrections</span>
+            <p class="field-hint">Fix words Whisper mishears: heard on the left, written on the right.</p>
+            <div id="corrections-list" class="corrections-list"></div>
+            <button id="add-correction" class="secondary" type="button">Add correction</button>
+          </div>
 
-      <footer class="actions">
-        <span id="save-note" class="save-note"></span>
-        <button id="save-button" class="primary">Save settings</button>
-      </footer>
+          <div class="field">
+            <label class="field-label" for="launch-toggle">Startup</label>
+            <label class="switch">
+              <input type="checkbox" id="launch-toggle" />
+              <span class="switch-track"></span>
+              <span class="switch-caption">Launch Rustle at login</span>
+            </label>
+          </div>
+
+          <div id="insert-banner" class="insert-banner" hidden>
+            <p id="insert-note" class="insert-note-text"></p>
+            <button id="open-accessibility" class="secondary" type="button">
+              Open Accessibility settings
+            </button>
+          </div>
+
+          <div class="actions">
+            <span id="save-note" class="save-note"></span>
+            <button id="save-button" class="primary" type="button">Save settings</button>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="panel-history">
+          <div class="block-head">
+            <span class="field-label">Dictation history</span>
+            <button id="clear-history" class="link-button" type="button">Clear</button>
+          </div>
+          <div id="history-list" class="history"></div>
+        </section>
+      </div>
     </main>
 
     <script src="main.js"></script>

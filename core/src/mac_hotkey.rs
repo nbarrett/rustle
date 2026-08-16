@@ -116,7 +116,7 @@ pub fn run_hotkey_tap(
     shared_config: Arc<Mutex<Config>>,
     listening_enabled: Arc<AtomicBool>,
     on_edge: Box<dyn Fn(HotkeyEdge) + Send>,
-) {
+) -> bool {
     let context = Box::new(TapContext {
         shared_config,
         listening_enabled,
@@ -140,7 +140,7 @@ pub fn run_hotkey_tap(
 
         if tap_port.is_null() {
             drop(Box::from_raw(context_pointer));
-            return;
+            return false;
         }
 
         (*context_pointer).tap_port.set(tap_port);
@@ -150,4 +150,5 @@ pub fn run_hotkey_tap(
         CGEventTapEnable(tap_port, true);
         CFRunLoopRun();
     }
+    true
 }

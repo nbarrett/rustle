@@ -9,12 +9,26 @@ use rustle_core::download::download_model_file;
 use rustle_core::engine::{DictationEngine, DictationStatus};
 
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_autostart::{AutoLaunchManager, MacosLauncher};
 
+#[cfg(target_os = "macos")]
+use objc2::MainThreadMarker;
+#[cfg(target_os = "macos")]
+use objc2_app_kit::NSApplication;
+
+mod overlay;
+
+use overlay::DictationOverlay;
+
 struct EngineState {
     engine: DictationEngine,
+}
+
+struct FeedbackState {
+    overlay: DictationOverlay,
+    tray: TrayIcon,
 }
 
 fn describe_status(status: &DictationStatus) -> serde_json::Value {
@@ -27,7 +41,15 @@ fn describe_status(status: &DictationStatus) -> serde_json::Value {
         DictationStatus::Failed(message) => {
             serde_json::json!({ "kind": "failed", "text": message })
         }
+        DictationStatus::NeedsPermission(message) => {
+            serde_json::json!({ "kind": "needs_permission", "text": message })
+        }
     }
+}
+
+#[tauri::command]
+fn get_app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
 }
 
 #[tauri::command]
@@ -43,10 +65,13 @@ fn save_and_apply_config(
 ) -> Result<(), String> {
     save_config(&new_config).map_err(|error| error.to_string())?;
     apply_launch_at_login(&app, new_config.launch_at_login);
-    let engine_state = state
-        .lock()
-        .map_err(|_| "engine state was unavailable".to_string())?;
-    engine_state.engine.apply_config(new_config);
+    {
+        let engine_state = state
+            .lock()
+            .map_err(|_| "engine state was unavailable".to_string())?;
+        engine_state.engine.apply_config(new_config);
+    }
+    conceal_settings_window(&app);
     Ok(())
 }
 
@@ -111,6 +136,16 @@ fn show_settings_window(app: AppHandle) {
 }
 
 #[tauri::command]
+fn open_accessibility_settings() {
+    let _ = std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")
+        .status();
+    let _ = std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .status();
+}
+
+#[tauri::command]
 fn resize_settings_window(app: AppHandle, content_height: f64) {
     let Some(window) = app.get_webview_window("settings") else {
         return;
@@ -122,51 +157,53 @@ fn resize_settings_window(app: AppHandle, content_height: f64) {
     ) else {
         return;
     };
-    let chrome_height = outer.height as f64 - inner.height as f64;
-    let target_height = ((content_height * scale + chrome_height).round() as u32).max(200);
-    let _ = window.set_size(tauri::PhysicalSize::new(outer.width, target_height));
-}
-
-#[cfg(target_os = "macos")]
-fn request_accessibility_trust() {
-    use core_foundation::base::TCFType;
-    use core_foundation::boolean::CFBoolean;
-    use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
-    use core_foundation::string::{CFString, CFStringRef};
-
-    #[link(name = "ApplicationServices", kind = "framework")]
-    extern "C" {
-        static kAXTrustedCheckOptionPrompt: CFStringRef;
-        fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
-    }
-
-    unsafe {
-        let prompt_key = CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt);
-        let prompt_value = CFBoolean::true_value();
-        let options =
-            CFDictionary::from_CFType_pairs(&[(prompt_key.as_CFType(), prompt_value.as_CFType())]);
-        let _ = AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef());
-    }
+    let title_bar_minimum = 28.0 * scale;
+    let chrome_height = (outer.height as f64 - inner.height as f64).max(title_bar_minimum);
+    let bottom_margin = 8.0 * scale;
+    let target_height =
+        ((content_height * scale + chrome_height + bottom_margin).round() as u32).max(200);
+    let locked_size = tauri::PhysicalSize::new(outer.width, target_height);
+    let _ = window.set_size(locked_size);
+    let _ = window.set_min_size(Some(locked_size));
+    let _ = window.set_max_size(Some(locked_size));
 }
 
 fn reveal_settings_window(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        if let Some(mtm) = MainThreadMarker::new() {
+            NSApplication::sharedApplication(mtm).activate();
+        }
+    }
     if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
 }
 
-fn build_tray_icon(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+fn conceal_settings_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.hide();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    }
+}
+
+fn build_tray_icon(app: &tauri::App) -> Result<TrayIcon, Box<dyn std::error::Error>> {
     let open_item = MenuItem::with_id(app, "open", "Open Rustle Settings", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit Rustle", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
 
     let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
 
-    TrayIconBuilder::with_id("rustle-tray")
+    let tray = TrayIconBuilder::with_id("rustle-tray")
         .icon(tray_icon)
         .icon_as_template(true)
-        .tooltip("Rustle")
+        .tooltip(&format!("Rustle {}", app.package_info().version))
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -185,7 +222,7 @@ fn build_tray_icon(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             }
         })
         .build(app)?;
-    Ok(())
+    Ok(tray)
 }
 
 fn main() {
@@ -198,29 +235,43 @@ fn main() {
             #[cfg(target_os = "macos")]
             {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-                request_accessibility_trust();
             }
 
             let config = load_config().unwrap_or_default();
+            let overlay = DictationOverlay::create();
+            let tray = build_tray_icon(app)?;
+            app.manage(FeedbackState {
+                overlay,
+                tray: tray.clone(),
+            });
+
             let status_app = app.handle().clone();
             let engine = DictationEngine::start(config, move |status| {
+                eprintln!("[rustle] {status:?}");
                 let _ = status_app.emit("dictation-status", describe_status(&status));
+                let app = status_app.clone();
+                let status = status.clone();
+                overlay::run_on_appkit_main(move || {
+                    if let Some(feedback) = app.try_state::<FeedbackState>() {
+                        feedback.overlay.apply(&app, &feedback.tray, &status);
+                    }
+                });
             })
             .map_err(|error| error.to_string())?;
 
             app.manage(Mutex::new(EngineState { engine }));
-            build_tray_icon(app)?;
             Ok(())
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "settings" {
-                    let _ = window.hide();
                     api.prevent_close();
+                    conceal_settings_window(window.app_handle());
                 }
             }
         })
         .invoke_handler(tauri::generate_handler![
+            get_app_version,
             get_config,
             save_and_apply_config,
             list_microphones,
@@ -229,6 +280,7 @@ fn main() {
             get_dictation_enabled,
             download_model,
             show_settings_window,
+            open_accessibility_settings,
             resize_settings_window
         ])
         .run(tauri::generate_context!())

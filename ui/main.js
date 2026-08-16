@@ -20,20 +20,76 @@ const elements = {
   downloadStatus: document.getElementById("download-status"),
   launchToggle: document.getElementById("launch-toggle"),
   liveTranscript: document.getElementById("live-transcript"),
+  historyList: document.getElementById("history-list"),
+  clearHistory: document.getElementById("clear-history"),
   correctionsList: document.getElementById("corrections-list"),
   addCorrection: document.getElementById("add-correction"),
+  appVersion: document.getElementById("app-version"),
   saveButton: document.getElementById("save-button"),
   saveNote: document.getElementById("save-note"),
+  insertBanner: document.getElementById("insert-banner"),
+  insertNote: document.getElementById("insert-note"),
+  openAccessibility: document.getElementById("open-accessibility"),
 };
+
+const HISTORY_STORAGE_KEY = "rustle-history";
+let dictationHistory = [];
+
+function loadHistory() {
+  try {
+    dictationHistory = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || "[]");
+  } catch (error) {
+    dictationHistory = [];
+  }
+}
+
+function saveHistory() {
+  try {
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(dictationHistory.slice(0, 200)));
+  } catch (error) {}
+}
+
+function renderHistory() {
+  elements.historyList.innerHTML = "";
+  for (const entry of dictationHistory) {
+    const item = document.createElement("div");
+    item.className = "history-item";
+    const time = document.createElement("span");
+    time.className = "history-time";
+    time.textContent = entry.time;
+    const text = document.createElement("span");
+    text.textContent = entry.text;
+    item.appendChild(time);
+    item.appendChild(text);
+    elements.historyList.appendChild(item);
+  }
+}
+
+function addHistoryEntry(text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) {
+    return;
+  }
+  const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  dictationHistory.unshift({ text: trimmed, time: stamp });
+  dictationHistory = dictationHistory.slice(0, 200);
+  saveHistory();
+  renderHistory();
+  fitWindowToContent();
+}
+
 
 let selectedModelFileName = "ggml-base.en.bin";
 let corrections = [];
 
-async function fitWindowToContent() {
-  try {
-    const contentHeight = document.documentElement.scrollHeight;
-    await invoke("resize_settings_window", { contentHeight });
-  } catch (error) {}
+function fitWindowToContent() {
+  requestAnimationFrame(async () => {
+    const app = document.querySelector(".app");
+    const contentHeight = app ? app.offsetHeight : document.body.scrollHeight;
+    try {
+      await invoke("resize_settings_window", { contentHeight });
+    } catch (error) {}
+  });
 }
 
 function renderCorrections() {
@@ -169,6 +225,13 @@ function setStatus(text, className) {
   elements.statusPill.className = "status-pill " + className;
 }
 
+function setInsertNote(text) {
+  const message = (text || "").trim();
+  elements.insertNote.textContent = message;
+  elements.insertBanner.hidden = message === "";
+  fitWindowToContent();
+}
+
 function showTranscript(text, live) {
   elements.liveTranscript.value = text;
   elements.liveTranscript.classList.toggle("is-live", live);
@@ -190,10 +253,15 @@ function applyStatusEvent(payload) {
     case "typed":
       setStatus("Typed", "status-live");
       showTranscript(payload.text || "", false);
+      setInsertNote("");
+      addHistoryEntry(payload.text);
+      break;
+    case "needs_permission":
+      setInsertNote(payload.text || "");
       break;
     case "failed":
       setStatus("Error", "status-fail");
-      elements.saveNote.textContent = payload.text || "";
+      setInsertNote(payload.text || "");
       break;
     default:
       setStatus("Idle", "status-idle");
@@ -238,6 +306,10 @@ async function saveSettings() {
 async function initialise() {
   const config = await invoke("get_config");
   selectedModelFileName = config.model_file_name;
+  const version = await invoke("get_app_version").catch(() => "");
+  if (version) {
+    elements.appVersion.textContent = version;
+  }
 
   populateHotkeys(config.hotkey);
   await populateMicrophones(config.input_device_name);
@@ -275,6 +347,9 @@ async function initialise() {
   });
 
   elements.saveButton.addEventListener("click", saveSettings);
+  elements.openAccessibility.addEventListener("click", () => {
+    invoke("open_accessibility_settings").catch(() => {});
+  });
 
   await listen("dictation-status", (event) => applyStatusEvent(event.payload));
   await listen("model-download-progress", (event) => {
@@ -285,8 +360,29 @@ async function initialise() {
     }
   });
 
-  window.addEventListener("focus", fitWindowToContent);
+  loadHistory();
+  renderHistory();
+  elements.clearHistory.addEventListener("click", () => {
+    dictationHistory = [];
+    saveHistory();
+    renderHistory();
+    fitWindowToContent();
+  });
+  setUpTabs();
   fitWindowToContent();
+}
+
+function setUpTabs() {
+  const tabs = document.querySelectorAll(".tab");
+  const panels = document.querySelectorAll(".tab-panel");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((other) => other.classList.toggle("is-active", other === tab));
+      const target = "panel-" + tab.getAttribute("data-tab");
+      panels.forEach((panel) => panel.classList.toggle("is-active", panel.id === target));
+      fitWindowToContent();
+    });
+  });
 }
 
 initialise();

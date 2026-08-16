@@ -1,12 +1,14 @@
 use anyhow::{anyhow, Result};
-use enigo::{Enigo, Keyboard, Settings};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-const PARTIAL_TRANSCRIPTION_INTERVAL: Duration = Duration::from_millis(600);
+const LIVE_TRANSCRIPTION_INTERVAL: Duration = Duration::from_millis(450);
+const LIVE_TRANSCRIPT_MINIMUM_SECONDS: f32 = 0.35;
+const CLIPBOARD_SETTLE: Duration = Duration::from_millis(30);
+const DELETE_SETTLE: Duration = Duration::from_millis(8);
 
 use crate::audio::{
     downmix_to_mono, resample_linear, start_recording, stop_recording, ActiveRecording,
@@ -23,6 +25,7 @@ pub enum DictationStatus {
     Partial(String),
     Typed(String),
     Failed(String),
+    NeedsPermission(String),
 }
 
 enum ControllerCommand {
@@ -51,7 +54,12 @@ impl DictationEngine {
             run_dictation_controller(controller_config, receiver, controller_status);
         });
 
-        spawn_hotkey_listener(shared_config.clone(), listening_enabled.clone(), sender);
+        spawn_hotkey_listener(
+            shared_config.clone(),
+            listening_enabled.clone(),
+            report_status.clone(),
+            sender,
+        );
 
         Ok(Self {
             shared_config,
@@ -80,11 +88,12 @@ impl DictationEngine {
 fn spawn_hotkey_listener(
     shared_config: Arc<Mutex<Config>>,
     listening_enabled: Arc<AtomicBool>,
+    report_status: Arc<dyn Fn(DictationStatus) + Send + Sync>,
     sender: Sender<ControllerCommand>,
 ) {
     use crate::mac_hotkey::{run_hotkey_tap, HotkeyEdge};
     thread::spawn(move || {
-        run_hotkey_tap(
+        let created = run_hotkey_tap(
             shared_config,
             listening_enabled,
             Box::new(move |edge| {
@@ -95,6 +104,12 @@ fn spawn_hotkey_listener(
                 let _ = sender.send(command);
             }),
         );
+        if !created {
+            write_engine_log("hotkey tap was not created; Input Monitoring is off");
+            report_status(DictationStatus::NeedsPermission(
+                "Input Monitoring is off. Enable Rustle there, then quit and reopen.".to_string(),
+            ));
+        }
     });
 }
 
@@ -102,6 +117,7 @@ fn spawn_hotkey_listener(
 fn spawn_hotkey_listener(
     _shared_config: Arc<Mutex<Config>>,
     _listening_enabled: Arc<AtomicBool>,
+    _report_status: Arc<dyn Fn(DictationStatus) + Send + Sync>,
     _sender: Sender<ControllerCommand>,
 ) {
 }
@@ -111,22 +127,15 @@ fn run_dictation_controller(
     receiver: Receiver<ControllerCommand>,
     report_status: Arc<dyn Fn(DictationStatus) + Send + Sync>,
 ) {
-    let mut enigo = match Enigo::new(&Settings::default()) {
-        Ok(enigo) => enigo,
-        Err(error) => {
-            report_status(DictationStatus::Failed(format!(
-                "keyboard output unavailable: {error}"
-            )));
-            return;
-        }
-    };
-
     let mut loaded_model: Option<(String, WhisperTranscriber)> = None;
     let mut recording: Option<ActiveRecording> = None;
+    let mut inserted_text = String::new();
+    let mut insert_origin: Option<i64> = None;
+    let mut saved_clipboard: Option<String> = None;
 
     loop {
         let command = if recording.is_some() {
-            match receiver.recv_timeout(PARTIAL_TRANSCRIPTION_INTERVAL) {
+            match receiver.recv_timeout(LIVE_TRANSCRIPTION_INTERVAL) {
                 Ok(command) => command,
                 Err(RecvTimeoutError::Timeout) => {
                     if let Some(active) = recording.as_ref() {
@@ -134,6 +143,17 @@ fn run_dictation_controller(
                         if let Some(text) =
                             transcribe_current_buffer(active, &loaded_model, &corrections)
                         {
+                            match sync_focused_text_to_transcript(
+                                &inserted_text,
+                                &text,
+                                &mut insert_origin,
+                            ) {
+                                Ok(()) => inserted_text = text.clone(),
+                                Err(error) => {
+                                    write_engine_log(&format!("live insert failed: {error}"));
+                                    report_insert_problem(report_status.as_ref(), &error);
+                                }
+                            }
                             report_status(DictationStatus::Partial(text));
                         }
                     }
@@ -161,6 +181,14 @@ fn run_dictation_controller(
                     match start_recording(config.input_device_name.as_deref()) {
                         Ok(active) => {
                             recording = Some(active);
+                            inserted_text.clear();
+                            insert_origin = None;
+                            saved_clipboard = read_clipboard_text();
+                            #[cfg(target_os = "macos")]
+                            write_engine_log(&format!(
+                                "AXIsProcessTrusted={}",
+                                crate::mac_ax::process_is_trusted()
+                            ));
                             report_status(DictationStatus::Listening);
                         }
                         Err(error) => report_status(DictationStatus::Failed(format!(
@@ -175,11 +203,16 @@ fn run_dictation_controller(
                         active,
                         &shared_config,
                         &mut loaded_model,
-                        &mut enigo,
+                        &inserted_text,
+                        &mut insert_origin,
                         report_status.as_ref(),
                     ) {
-                        report_status(DictationStatus::Failed(format!("{error}")));
+                        write_engine_log(&format!("final insert failed: {error}"));
+                        report_insert_problem(report_status.as_ref(), &error);
                     }
+                    restore_clipboard_text(saved_clipboard.take());
+                    inserted_text.clear();
+                    insert_origin = None;
                 }
             }
         }
@@ -193,7 +226,8 @@ fn transcribe_current_buffer(
 ) -> Option<String> {
     let transcriber = &loaded_model.as_ref()?.1;
     let captured = active.samples_handle().lock().unwrap().clone();
-    let minimum_samples = (active.sample_rate() as usize * active.channels() as usize) / 2;
+    let minimum_samples = ((active.sample_rate() as f32 * LIVE_TRANSCRIPT_MINIMUM_SECONDS)
+        * active.channels() as f32) as usize;
     if captured.len() < minimum_samples {
         return None;
     }
@@ -213,7 +247,8 @@ fn transcribe_and_type(
     active: ActiveRecording,
     shared_config: &Arc<Mutex<Config>>,
     loaded_model: &mut Option<(String, WhisperTranscriber)>,
-    enigo: &mut Enigo,
+    already_inserted: &str,
+    insert_origin: &mut Option<i64>,
     report_status: &(dyn Fn(DictationStatus) + Send + Sync),
 ) -> Result<()> {
     let (samples, sample_rate, channels) = stop_recording(active);
@@ -237,11 +272,126 @@ fn transcribe_and_type(
         return Ok(());
     }
 
-    enigo
-        .text(spoken)
-        .map_err(|error| anyhow!("failed to type transcript: {error}"))?;
+    sync_focused_text_to_transcript(already_inserted, spoken, insert_origin)?;
     report_status(DictationStatus::Typed(spoken.to_string()));
     Ok(())
+}
+
+fn report_insert_problem(report_status: &(dyn Fn(DictationStatus) + Send + Sync), error: &anyhow::Error) {
+    let message = error.to_string();
+    if message.contains("AX -25211") {
+        report_status(DictationStatus::NeedsPermission(
+            "Accessibility is off. Use Privacy & Security → Accessibility, then quit and reopen.".to_string(),
+        ));
+    } else {
+        report_status(DictationStatus::Failed(message));
+    }
+}
+
+fn shared_prefix_char_count(left: &str, right: &str) -> usize {
+    left.chars()
+        .zip(right.chars())
+        .take_while(|(first, second)| first == second)
+        .count()
+}
+
+fn sync_focused_text_to_transcript(
+    previous: &str,
+    current: &str,
+    insert_origin: &mut Option<i64>,
+) -> Result<()> {
+    if current == previous {
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        match crate::mac_ax::replace_in_focused_field(*insert_origin, previous, current) {
+            Ok(origin) => {
+                *insert_origin = Some(origin);
+                write_engine_log(&format!("ax insert ok origin={origin}"));
+                return Ok(());
+            }
+            Err(error) => {
+                write_engine_log(&format!("ax insert failed: {error}"));
+            }
+        }
+    }
+    let prefix = shared_prefix_char_count(previous, current);
+    let delete_count = previous.chars().count().saturating_sub(prefix);
+    let addition: String = current.chars().skip(prefix).collect();
+    if delete_count > 0 {
+        post_delete_keystrokes(delete_count)?;
+        thread::sleep(DELETE_SETTLE);
+    }
+    if !addition.is_empty() {
+        paste_text(&addition)?;
+    }
+    write_engine_log("keystroke insert used");
+    Ok(())
+}
+
+fn write_engine_log(message: &str) {
+    let Ok(directory) = crate::config::rustle_directory() else {
+        return;
+    };
+    let path = directory.join("engine.log");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut file| {
+            use std::io::Write;
+            writeln!(file, "{stamp} {message}")
+        });
+}
+
+fn paste_text(text: &str) -> Result<()> {
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|error| anyhow!("clipboard unavailable: {error}"))?;
+    clipboard
+        .set_text(text.to_string())
+        .map_err(|error| anyhow!("failed to set clipboard: {error}"))?;
+    thread::sleep(CLIPBOARD_SETTLE);
+    post_paste_keystroke()
+}
+
+fn read_clipboard_text() -> Option<String> {
+    arboard::Clipboard::new()
+        .ok()
+        .and_then(|mut clipboard| clipboard.get_text().ok())
+}
+
+fn restore_clipboard_text(text: Option<String>) {
+    let Some(text) = text else {
+        return;
+    };
+    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+        let _ = clipboard.set_text(text);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn post_paste_keystroke() -> Result<()> {
+    crate::mac_paste::post_command_v_keystroke()
+}
+
+#[cfg(target_os = "macos")]
+fn post_delete_keystrokes(count: usize) -> Result<()> {
+    crate::mac_paste::post_delete_keystrokes(count)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn post_paste_keystroke() -> Result<()> {
+    Err(anyhow!("paste is only implemented on macOS"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn post_delete_keystrokes(_count: usize) -> Result<()> {
+    Err(anyhow!("delete is only implemented on macOS"))
 }
 
 fn ensure_model_loaded(

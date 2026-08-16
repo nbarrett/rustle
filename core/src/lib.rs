@@ -4,5 +4,9 @@ pub mod download;
 pub mod engine;
 pub mod hotkey;
 #[cfg(target_os = "macos")]
+pub mod mac_ax;
+#[cfg(target_os = "macos")]
 pub mod mac_hotkey;
+#[cfg(target_os = "macos")]
+pub mod mac_paste;
 pub mod transcribe;

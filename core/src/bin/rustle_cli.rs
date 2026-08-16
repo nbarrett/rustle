@@ -15,6 +15,8 @@ fn main() -> Result<()> {
         DictationStatus::Transcribing => println!("transcribing..."),
         DictationStatus::Typed(text) => println!("typed: {text}"),
         DictationStatus::Failed(message) => eprintln!("error: {message}"),
+        DictationStatus::NeedsPermission(message) => eprintln!("{message}"),
+        DictationStatus::Partial(text) => println!("partial: {text}"),
         DictationStatus::Idle => {}
     })?;
 
