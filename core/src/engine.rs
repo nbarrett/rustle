@@ -168,6 +168,7 @@ fn run_dictation_controller(
                                     &inserted_text,
                                     &text,
                                     false,
+                                    true,
                                 ) {
                                     Ok(InsertKind::Iterm | InsertKind::SystemEvents) => {
                                         inserted_text = text.clone();
@@ -214,12 +215,13 @@ fn run_dictation_controller(
                                 insert_target = crate::mac_paste::insert_target_app();
                                 match &insert_target {
                                     Some(app) => write_engine_log(&format!(
-                                        "AXIsProcessTrusted={} insert target={} bundle={} pid={} iterm={}",
+                                        "AXIsProcessTrusted={} insert target={} bundle={} pid={} iterm={} session={}",
                                         crate::mac_ax::process_is_trusted(),
                                         app.name,
                                         app.bundle.as_deref().unwrap_or("-"),
                                         app.pid,
-                                        app.is_iterm()
+                                        app.is_iterm(),
+                                        app.session_id.as_deref().unwrap_or("-")
                                     )),
                                     None => write_engine_log(&format!(
                                         "AXIsProcessTrusted={} insert target unavailable",
@@ -322,13 +324,29 @@ fn transcribe_and_type(
     )?;
     if config.press_enter_on_release {
         match insert_kind {
-            InsertKind::Iterm => apply_iterm_text_delta("", "", true)?,
+            InsertKind::Iterm => apply_iterm_text_delta(
+                "",
+                "",
+                true,
+                #[cfg(target_os = "macos")]
+                insert_target.and_then(|app| app.session_id.as_deref()),
+                #[cfg(not(target_os = "macos"))]
+                None,
+            )?,
             InsertKind::Unchanged if target_is_iterm(
                 #[cfg(target_os = "macos")]
                 insert_target,
             ) =>
             {
-                apply_iterm_text_delta("", "", true)?;
+                apply_iterm_text_delta(
+                    "",
+                    "",
+                    true,
+                    #[cfg(target_os = "macos")]
+                    insert_target.and_then(|app| app.session_id.as_deref()),
+                    #[cfg(not(target_os = "macos"))]
+                    None,
+                )?;
             }
             InsertKind::OwnUi => {}
             InsertKind::SystemEvents | InsertKind::Unchanged => {
@@ -374,6 +392,7 @@ fn insert_text_for_target(
     previous: &str,
     current: &str,
     press_return: bool,
+    is_live: bool,
 ) -> Result<InsertKind> {
     if current == previous && !press_return {
         return Ok(InsertKind::Unchanged);
@@ -385,7 +404,16 @@ fn insert_text_for_target(
             return Ok(InsertKind::OwnUi);
         }
         if target.is_some_and(|app| app.is_iterm()) {
-            apply_iterm_text_delta(previous, current, press_return)?;
+            if is_live {
+                write_engine_log("iterm live insert skipped; waiting for release");
+                return Ok(InsertKind::Unchanged);
+            }
+            apply_iterm_text_delta(
+                previous,
+                current,
+                press_return,
+                target.and_then(|app| app.session_id.as_deref()),
+            )?;
             return Ok(InsertKind::Iterm);
         }
         apply_system_events_text_delta(previous, current, press_return)?;
@@ -393,7 +421,7 @@ fn insert_text_for_target(
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (previous, current, press_return);
+        let _ = (previous, current, press_return, is_live);
         Err(anyhow!("insert needs macOS"))
     }
 }
@@ -422,22 +450,34 @@ fn apply_system_events_text_delta(
     }
 }
 
-fn apply_iterm_text_delta(previous: &str, current: &str, press_return: bool) -> Result<()> {
+fn apply_iterm_text_delta(
+    previous: &str,
+    current: &str,
+    press_return: bool,
+    session_id: Option<&str>,
+) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
         let prefix = shared_prefix_char_count(previous, current);
         let delete_count = previous.chars().count().saturating_sub(prefix);
         let addition: String = current.chars().skip(prefix).collect();
-        crate::mac_paste::apply_iterm_session_delta(delete_count, &addition, press_return)?;
+        crate::mac_paste::apply_iterm_session_delta(
+            session_id,
+            delete_count,
+            &addition,
+            press_return,
+        )?;
         write_engine_log(&format!(
-            "iterm insert used deletes={delete_count} chars={} return={press_return}",
-            addition.chars().count()
+            "iterm insert used session={} deletes={delete_count} chars={} return={press_return} text={:?}",
+            session_id.unwrap_or("-"),
+            addition.chars().count(),
+            addition
         ));
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (previous, current, press_return);
+        let _ = (previous, current, press_return, session_id);
         Err(anyhow!("iTerm insert needs macOS"))
     }
 }
@@ -504,7 +544,7 @@ fn sync_focused_text_to_transcript(
                 write_engine_log(&format!("ax insert failed: {error}"));
             }
         }
-        match insert_text_for_target(insert_target, previous, current, false) {
+        match insert_text_for_target(insert_target, previous, current, false, false) {
             Ok(kind) => return Ok(kind),
             Err(error) => write_engine_log(&format!("target insert failed: {error}")),
         }

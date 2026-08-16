@@ -4,8 +4,8 @@ use objc2::runtime::AnyObject;
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::NSWorkspace;
 use objc2_foundation::{
-    NSAppleScript, NSAppleScriptErrorBriefMessage, NSAppleScriptErrorMessage, NSDictionary,
-    NSString,
+    NSAppleEventDescriptor, NSAppleScript, NSAppleScriptErrorBriefMessage,
+    NSAppleScriptErrorMessage, NSDictionary, NSString,
 };
 use std::ffi::c_void;
 use std::sync::mpsc;
@@ -72,6 +72,7 @@ pub struct FrontApp {
     pub name: String,
     pub bundle: Option<String>,
     pub pid: i32,
+    pub session_id: Option<String>,
 }
 
 pub fn name_looks_like_iterm(name: &str) -> bool {
@@ -111,12 +112,38 @@ pub fn frontmost_app() -> Option<FrontApp> {
 }
 
 pub fn insert_target_app() -> Option<FrontApp> {
-    if let Some(app) = workspace_front_app() {
+    let mut app = if let Some(app) = workspace_front_app() {
         if !app.is_ours() && !name_is_chrome_ui(&app.name) {
-            return Some(app);
+            Some(app)
+        } else {
+            window_list_front_app()
         }
+    } else {
+        window_list_front_app()
+    }?;
+    if app.is_iterm() {
+        app.session_id = current_iterm_session_id();
     }
-    window_list_front_app()
+    Some(app)
+}
+
+pub fn current_iterm_session_id() -> Option<String> {
+    let from_iterm = run_applescript_string(
+        r#"tell application "iTerm" to get id of current session of current window"#,
+    );
+    let raw = match from_iterm {
+        Ok(value) => value,
+        Err(_) => run_applescript_string(
+            r#"tell application "iTerm2" to get id of current session of current window"#,
+        )
+        .ok()?,
+    };
+    let trimmed = raw.trim().to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
 }
 
 fn workspace_front_app() -> Option<FrontApp> {
@@ -131,7 +158,12 @@ fn workspace_front_app() -> Option<FrontApp> {
     if name.is_empty() && bundle.is_none() {
         return None;
     }
-    Some(FrontApp { name, bundle, pid })
+    Some(FrontApp {
+        name,
+        bundle,
+        pid,
+        session_id: None,
+    })
 }
 
 fn name_is_chrome_ui(name: &str) -> bool {
@@ -189,6 +221,7 @@ fn window_list_front_app() -> Option<FrontApp> {
                 name,
                 bundle: None,
                 pid,
+                session_id: None,
             });
             break;
         }
@@ -231,6 +264,7 @@ pub fn post_system_events_command_v() -> Result<()> {
 }
 
 pub fn apply_iterm_session_delta(
+    session_id: Option<&str>,
     backspace_count: usize,
     text: &str,
     press_return: bool,
@@ -242,9 +276,27 @@ pub fn apply_iterm_session_delta(
     let deletes_literal = applescript_literal(&deletes);
     let text_literal = applescript_literal(text);
     let return_flag = if press_return { "yes" } else { "no" };
+    let session_literal = applescript_literal(session_id.unwrap_or(""));
     let script = format!(
         r#"tell application "iTerm"
-  tell current session of current window
+  set targetId to {session_literal}
+  set targetSession to missing value
+  if targetId is not "" then
+    repeat with aWindow in windows
+      repeat with aTab in tabs of aWindow
+        repeat with aSession in sessions of aTab
+          if id of aSession is targetId then
+            set targetSession to aSession
+          end if
+        end repeat
+      end repeat
+    end repeat
+  end if
+  if targetSession is missing value then
+    set targetSession to current session of current window
+  end if
+  tell targetSession
+    select
     if (count of {deletes_literal}) > 0 then
       write text {deletes_literal} newline no
     end if
@@ -347,6 +399,16 @@ unsafe fn post_key(
 }
 
 fn run_applescript(source: &str) -> Result<()> {
+    execute_applescript(source).map(|_| ())
+}
+
+fn run_applescript_string(source: &str) -> Result<String> {
+    execute_applescript(source)?
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| anyhow!("AppleScript returned no text"))
+}
+
+fn execute_applescript(source: &str) -> Result<Option<String>> {
     let source = source.to_string();
     run_on_main(move || {
         let ns_source = NSString::from_str(&source);
@@ -354,13 +416,13 @@ fn run_applescript(source: &str) -> Result<()> {
             return Err(anyhow!("could not build AppleScript"));
         };
         let mut error: Option<objc2::rc::Retained<NSDictionary<NSString, AnyObject>>> = None;
-        unsafe {
-            let _ = script.executeAndReturnError(Some(&mut error));
-        }
+        let descriptor: objc2::rc::Retained<NSAppleEventDescriptor> = unsafe {
+            script.executeAndReturnError(Some(&mut error))
+        };
         if let Some(error) = error {
             return Err(anyhow!("{}", applescript_error_message(&error)));
         }
-        Ok(())
+        Ok(descriptor.stringValue().map(|value| value.to_string()))
     })
 }
 
