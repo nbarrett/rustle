@@ -40,6 +40,14 @@ impl HotkeyChoice {
         }
     }
 
+    pub fn matches_macos_keycode(self, keycode: i64) -> bool {
+        match self {
+            HotkeyChoice::RightOption => keycode == 61 || keycode == 58,
+            HotkeyChoice::RightControl => keycode == 62 || keycode == 59,
+            other => keycode == other.macos_keycode(),
+        }
+    }
+
     pub fn is_modifier(self) -> bool {
         matches!(
             self,
@@ -54,5 +62,17 @@ impl HotkeyChoice {
             HotkeyChoice::RightControl => 0x0004_0000,
             _ => 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HotkeyChoice;
+
+    #[test]
+    fn right_option_accepts_either_option_key() {
+        assert!(HotkeyChoice::RightOption.matches_macos_keycode(61));
+        assert!(HotkeyChoice::RightOption.matches_macos_keycode(58));
+        assert!(!HotkeyChoice::RightOption.matches_macos_keycode(62));
     }
 }

@@ -91,7 +91,7 @@ extern "C" fn tap_callback(
 
     let choice = context.shared_config.lock().unwrap().hotkey;
     let keycode = unsafe { CGEventGetIntegerValueField(event, FIELD_KEYCODE) };
-    if keycode != choice.macos_keycode() {
+    if !choice.matches_macos_keycode(keycode) {
         return event;
     }
 
@@ -140,10 +140,12 @@ pub fn run_hotkey_tap(
 
         if tap_port.is_null() {
             drop(Box::from_raw(context_pointer));
+            write_hotkey_log("hotkey tap was not created");
             return false;
         }
 
         (*context_pointer).tap_port.set(tap_port);
+        write_hotkey_log("hotkey tap listening");
 
         let source = CFMachPortCreateRunLoopSource(ptr::null(), tap_port, 0);
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
@@ -151,4 +153,23 @@ pub fn run_hotkey_tap(
         CFRunLoopRun();
     }
     true
+}
+
+fn write_hotkey_log(message: &str) {
+    let Ok(directory) = crate::config::rustle_directory() else {
+        return;
+    };
+    let path = directory.join("engine.log");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut file| {
+            use std::io::Write;
+            writeln!(file, "{stamp} {message}")
+        });
 }
