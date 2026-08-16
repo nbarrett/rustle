@@ -13,11 +13,6 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, Tray
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_autostart::{AutoLaunchManager, MacosLauncher};
 
-#[cfg(target_os = "macos")]
-use objc2::MainThreadMarker;
-#[cfg(target_os = "macos")]
-use objc2_app_kit::NSApplication;
-
 mod overlay;
 
 use overlay::DictationOverlay;
@@ -169,13 +164,6 @@ fn resize_settings_window(app: AppHandle, content_height: f64) {
 }
 
 fn reveal_settings_window(app: &AppHandle) {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-        if let Some(mtm) = MainThreadMarker::new() {
-            NSApplication::sharedApplication(mtm).activate();
-        }
-    }
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.unminimize();
         let _ = window.show();
@@ -186,10 +174,6 @@ fn reveal_settings_window(app: &AppHandle) {
 fn conceal_settings_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.hide();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     }
 }
 
@@ -232,11 +216,6 @@ fn main() {
             None,
         ))
         .setup(|app| {
-            #[cfg(target_os = "macos")]
-            {
-                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-            }
-
             let config = load_config().unwrap_or_default();
             let overlay = DictationOverlay::create();
             let tray = build_tray_icon(app)?;
