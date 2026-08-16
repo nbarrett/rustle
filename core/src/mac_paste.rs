@@ -9,6 +9,7 @@ const EVENT_SOURCE_STATE_COMBINED_SESSION: i32 = 0;
 const KEYCODE_COMMAND: u16 = 0x37;
 const KEYCODE_ANSI_V: u16 = 0x09;
 const KEYCODE_DELETE: u16 = 0x33;
+const KEYCODE_RETURN: u16 = 0x24;
 const EVENT_FLAG_COMMAND: u64 = 0x0010_0000;
 
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -56,6 +57,19 @@ pub fn post_delete_keystrokes(count: usize) -> Result<()> {
             post_key(source, KEYCODE_DELETE, true, 0);
             post_key(source, KEYCODE_DELETE, false, 0);
         }
+        CFRelease(source as *const c_void);
+    }
+    Ok(())
+}
+
+pub fn post_return_keystroke() -> Result<()> {
+    unsafe {
+        let source = CGEventSourceCreate(EVENT_SOURCE_STATE_COMBINED_SESSION);
+        if source.is_null() {
+            return Err(anyhow!("failed to create event source for return"));
+        }
+        post_key(source, KEYCODE_RETURN, true, 0);
+        post_key(source, KEYCODE_RETURN, false, 0);
         CFRelease(source as *const c_void);
     }
     Ok(())

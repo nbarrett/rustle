@@ -273,6 +273,10 @@ fn transcribe_and_type(
     }
 
     sync_focused_text_to_transcript(already_inserted, spoken, insert_origin)?;
+    if config.press_enter_on_release {
+        thread::sleep(CLIPBOARD_SETTLE);
+        post_return_keystroke()?;
+    }
     report_status(DictationStatus::Typed(spoken.to_string()));
     Ok(())
 }
@@ -384,6 +388,11 @@ fn post_delete_keystrokes(count: usize) -> Result<()> {
     crate::mac_paste::post_delete_keystrokes(count)
 }
 
+#[cfg(target_os = "macos")]
+fn post_return_keystroke() -> Result<()> {
+    crate::mac_paste::post_return_keystroke()
+}
+
 #[cfg(not(target_os = "macos"))]
 fn post_paste_keystroke() -> Result<()> {
     Err(anyhow!("paste is only implemented on macOS"))
@@ -392,6 +401,11 @@ fn post_paste_keystroke() -> Result<()> {
 #[cfg(not(target_os = "macos"))]
 fn post_delete_keystrokes(_count: usize) -> Result<()> {
     Err(anyhow!("delete is only implemented on macOS"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn post_return_keystroke() -> Result<()> {
+    Err(anyhow!("return is only implemented on macOS"))
 }
 
 fn ensure_model_loaded(

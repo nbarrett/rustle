@@ -16,6 +16,8 @@ pub struct Config {
     pub model_file_name: String,
     pub input_device_name: Option<String>,
     pub launch_at_login: bool,
+    #[serde(default)]
+    pub press_enter_on_release: bool,
     #[serde(default = "default_corrections")]
     pub corrections: Vec<Correction>,
 }
@@ -40,6 +42,7 @@ impl Default for Config {
             model_file_name: "ggml-base.en.bin".to_string(),
             input_device_name: None,
             launch_at_login: false,
+            press_enter_on_release: false,
             corrections: default_corrections(),
         }
     }

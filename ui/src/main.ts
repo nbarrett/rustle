@@ -51,6 +51,7 @@ const elements = {
   modelSelect: requiredElement<HTMLSelectElement>("model-select"),
   modelDownload: requiredElement<HTMLButtonElement>("model-download"),
   downloadStatus: requiredElement<HTMLParagraphElement>("download-status"),
+  enterToggle: requiredElement<HTMLInputElement>("enter-toggle"),
   launchToggle: requiredElement<HTMLInputElement>("launch-toggle"),
   liveTranscript: requiredElement<HTMLTextAreaElement>("live-transcript"),
   historyList: requiredElement<HTMLDivElement>("history-list"),
@@ -338,6 +339,7 @@ async function saveSettings(): Promise<void> {
     model_file_name: modelFileName,
     input_device_name: microphoneValue === "" ? null : microphoneValue,
     launch_at_login: elements.launchToggle.checked,
+    press_enter_on_release: elements.enterToggle.checked,
     corrections: corrections
       .map((rule) => ({ spoken: rule.spoken.trim(), written: rule.written.trim() }))
       .filter((rule) => rule.spoken !== ""),
@@ -379,6 +381,7 @@ async function initialise(): Promise<void> {
   populateHotkeys(config.hotkey);
   await populateMicrophones(config.input_device_name);
   await populateModels();
+  elements.enterToggle.checked = config.press_enter_on_release;
   elements.launchToggle.checked = config.launch_at_login;
 
   elements.modelSelect.addEventListener("change", () => {

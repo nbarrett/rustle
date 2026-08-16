@@ -15,6 +15,7 @@ export type Config = {
   model_file_name: string;
   input_device_name: string | null;
   launch_at_login: boolean;
+  press_enter_on_release: boolean;
   corrections: Correction[];
 };
 
