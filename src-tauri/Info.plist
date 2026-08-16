@@ -4,6 +4,8 @@
 <dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>Rustle listens to your microphone so it can transcribe your speech into text on your own machine.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Rustle types dictated text into the app you are using, including iTerm.</string>
     <key>LSUIElement</key>
     <true/>
 </dict>

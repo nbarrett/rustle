@@ -133,6 +133,7 @@ fn run_dictation_controller(
     let mut insert_origin: Option<i64> = None;
     let mut saved_clipboard: Option<String> = None;
     let mut live_ax_insert_works = true;
+    let mut live_iterm_insert = false;
 
     loop {
         let command = if recording.is_some() {
@@ -156,7 +157,16 @@ fn run_dictation_controller(
                                             "live AX insert disabled: {error}"
                                         ));
                                         live_ax_insert_works = false;
+                                        live_iterm_insert = focused_app_is_iterm();
                                     }
+                                }
+                            }
+                            if live_iterm_insert {
+                                match apply_iterm_text_delta(&inserted_text, &text, false) {
+                                    Ok(()) => inserted_text = text.clone(),
+                                    Err(error) => write_engine_log(&format!(
+                                        "live iTerm insert failed: {error}"
+                                    )),
                                 }
                             }
                             report_status(DictationStatus::Partial(text));
@@ -189,6 +199,7 @@ fn run_dictation_controller(
                             inserted_text.clear();
                             insert_origin = None;
                             live_ax_insert_works = true;
+                            live_iterm_insert = false;
                             saved_clipboard = read_clipboard_text();
                             #[cfg(target_os = "macos")]
                             write_engine_log(&format!(
@@ -278,13 +289,73 @@ fn transcribe_and_type(
         return Ok(());
     }
 
-    sync_focused_text_to_transcript(already_inserted, spoken, insert_origin)?;
+    let insert_kind = sync_focused_text_to_transcript(already_inserted, spoken, insert_origin)?;
     if config.press_enter_on_release {
-        thread::sleep(CLIPBOARD_SETTLE);
-        post_return_keystroke()?;
+        match insert_kind {
+            InsertKind::Iterm => apply_iterm_text_delta("", "", true)?,
+            InsertKind::Unchanged if focused_app_is_iterm() => {
+                apply_iterm_text_delta("", "", true)?;
+            }
+            _ => {
+                thread::sleep(CLIPBOARD_SETTLE);
+                post_return_keystroke()?;
+            }
+        }
     }
     report_status(DictationStatus::Typed(spoken.to_string()));
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InsertKind {
+    Unchanged,
+    Accessibility,
+    Iterm,
+    Keystroke,
+}
+
+fn focused_app_is_iterm() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        match crate::mac_paste::frontmost_app() {
+            Some(app) => {
+                let is_iterm = crate::mac_paste::name_looks_like_iterm(&app.name);
+                write_engine_log(&format!(
+                    "front app={} pid={} iterm={is_iterm}",
+                    app.name, app.pid
+                ));
+                is_iterm
+            }
+            None => {
+                write_engine_log("front app unavailable");
+                false
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+fn apply_iterm_text_delta(previous: &str, current: &str, press_return: bool) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        let prefix = shared_prefix_char_count(previous, current);
+        let delete_count = previous.chars().count().saturating_sub(prefix);
+        let addition: String = current.chars().skip(prefix).collect();
+        crate::mac_paste::apply_iterm_session_delta(delete_count, &addition, press_return)?;
+        write_engine_log(&format!(
+            "iterm insert used deletes={delete_count} chars={} return={press_return}",
+            addition.chars().count()
+        ));
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (previous, current, press_return);
+        Err(anyhow!("iTerm insert needs macOS"))
+    }
 }
 
 fn report_insert_problem(report_status: &(dyn Fn(DictationStatus) + Send + Sync), error: &anyhow::Error) {
@@ -332,9 +403,9 @@ fn sync_focused_text_to_transcript(
     previous: &str,
     current: &str,
     insert_origin: &mut Option<i64>,
-) -> Result<()> {
+) -> Result<InsertKind> {
     if current == previous {
-        return Ok(());
+        return Ok(InsertKind::Unchanged);
     }
     #[cfg(target_os = "macos")]
     {
@@ -342,10 +413,18 @@ fn sync_focused_text_to_transcript(
             Ok(origin) => {
                 *insert_origin = Some(origin);
                 write_engine_log(&format!("ax insert ok origin={origin}"));
-                return Ok(());
+                return Ok(InsertKind::Accessibility);
             }
             Err(error) => {
                 write_engine_log(&format!("ax insert failed: {error}"));
+            }
+        }
+        if focused_app_is_iterm() {
+            match apply_iterm_text_delta(previous, current, false) {
+                Ok(()) => return Ok(InsertKind::Iterm),
+                Err(error) => {
+                    write_engine_log(&format!("iterm insert failed: {error}"));
+                }
             }
         }
     }
@@ -360,7 +439,7 @@ fn sync_focused_text_to_transcript(
         paste_text(&addition)?;
     }
     write_engine_log("keystroke insert used");
-    Ok(())
+    Ok(InsertKind::Keystroke)
 }
 
 fn write_engine_log(message: &str) {
