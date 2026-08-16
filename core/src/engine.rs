@@ -160,7 +160,11 @@ fn run_dictation_controller(
                                 }
                             }
                             if !live_ax_insert_works {
-                                if focused_app_is_iterm() {
+                                if focused_app_is_ours() {
+                                    write_engine_log(
+                                        "live insert skipped; Rustle is frontmost",
+                                    );
+                                } else if focused_app_is_iterm() {
                                     match apply_iterm_text_delta(&inserted_text, &text, false) {
                                         Ok(()) => inserted_text = text.clone(),
                                         Err(error) => write_engine_log(&format!(
@@ -300,7 +304,7 @@ fn transcribe_and_type(
     }
 
     let insert_kind = sync_focused_text_to_transcript(already_inserted, spoken, insert_origin)?;
-    if config.press_enter_on_release {
+    if config.press_enter_on_release && !focused_app_is_ours() {
         match insert_kind {
             InsertKind::Iterm => apply_iterm_text_delta("", "", true)?,
             InsertKind::Unchanged if focused_app_is_iterm() => {
@@ -332,25 +336,38 @@ enum InsertKind {
     Keystroke,
 }
 
+#[cfg(target_os = "macos")]
+fn focused_front_app() -> Option<crate::mac_paste::FrontApp> {
+    let app = crate::mac_paste::frontmost_app();
+    match &app {
+        Some(app) => write_engine_log(&format!(
+            "front app={} bundle={} pid={} iterm={} ours={}",
+            app.name,
+            app.bundle.as_deref().unwrap_or("-"),
+            app.pid,
+            app.is_iterm(),
+            app.is_ours()
+        )),
+        None => write_engine_log("front app unavailable"),
+    }
+    app
+}
+
 fn focused_app_is_iterm() -> bool {
     #[cfg(target_os = "macos")]
     {
-        match crate::mac_paste::frontmost_app() {
-            Some(app) => {
-                let is_iterm = app.is_iterm();
-                write_engine_log(&format!(
-                    "front app={} bundle={} pid={} iterm={is_iterm}",
-                    app.name,
-                    app.bundle.as_deref().unwrap_or("-"),
-                    app.pid
-                ));
-                is_iterm
-            }
-            None => {
-                write_engine_log("front app unavailable");
-                false
-            }
-        }
+        focused_front_app().is_some_and(|app| app.is_iterm())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+fn focused_app_is_ours() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        focused_front_app().is_some_and(|app| app.is_ours())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -462,6 +479,10 @@ fn sync_focused_text_to_transcript(
             Err(error) => {
                 write_engine_log(&format!("ax insert failed: {error}"));
             }
+        }
+        if focused_app_is_ours() {
+            write_engine_log("final insert skipped; Rustle is frontmost");
+            return Ok(InsertKind::Unchanged);
         }
         if focused_app_is_iterm() {
             match apply_iterm_text_delta(previous, current, false) {

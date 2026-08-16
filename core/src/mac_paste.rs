@@ -89,11 +89,20 @@ impl FrontApp {
                 .as_deref()
                 .is_some_and(bundle_looks_like_iterm)
     }
+
+    pub fn is_ours(&self) -> bool {
+        self.pid == std::process::id() as i32
+            || self.name.eq_ignore_ascii_case("rustle")
+            || self
+                .bundle
+                .as_deref()
+                .is_some_and(|bundle| bundle.eq_ignore_ascii_case("com.annix.rustle"))
+    }
 }
 
 pub fn frontmost_app() -> Option<FrontApp> {
     if let Some(app) = workspace_front_app() {
-        if !app_is_our_process(&app) && !name_is_chrome_ui(&app.name) {
+        if !name_is_chrome_ui(&app.name) {
             return Some(app);
         }
     }
@@ -113,10 +122,6 @@ fn workspace_front_app() -> Option<FrontApp> {
         return None;
     }
     Some(FrontApp { name, bundle, pid })
-}
-
-fn app_is_our_process(app: &FrontApp) -> bool {
-    app.pid == std::process::id() as i32 || app.name.eq_ignore_ascii_case("rustle")
 }
 
 fn name_is_chrome_ui(name: &str) -> bool {
