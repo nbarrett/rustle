@@ -67,9 +67,13 @@ struct TapContext {
 fn deliver_edge(context: &TapContext, pressed: bool) {
     if pressed {
         if context.listening_enabled.load(Ordering::SeqCst) {
+            write_hotkey_log("hotkey press");
             (context.on_edge)(HotkeyEdge::Press);
+        } else {
+            write_hotkey_log("hotkey press ignored; listening is off");
         }
     } else {
+        write_hotkey_log("hotkey release");
         (context.on_edge)(HotkeyEdge::Release);
     }
 }
