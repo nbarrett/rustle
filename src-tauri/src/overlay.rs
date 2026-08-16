@@ -49,17 +49,17 @@ impl DictationOverlay {
         match status {
             DictationStatus::Listening => {
                 self.bump_generation();
-                set_tray(tray, Some("Listening"), Some("Rustle · Listening"));
+                set_tray(tray, None, Some("Rustle · Listening"));
                 self.show_message("●  Listening…");
             }
             DictationStatus::Partial(text) => {
                 self.bump_generation();
-                set_tray(tray, Some("Listening"), Some(&format!("Rustle · {text}")));
+                set_tray(tray, None, Some(&format!("Rustle · {text}")));
                 self.show_message(&format!("●  {text}"));
             }
             DictationStatus::Transcribing => {
                 self.bump_generation();
-                set_tray(tray, Some("…"), Some("Rustle · Transcribing"));
+                set_tray(tray, None, Some("Rustle · Transcribing"));
             }
             DictationStatus::Typed(text) => {
                 set_tray(tray, None, Some(&format!("Rustle · {text}")));

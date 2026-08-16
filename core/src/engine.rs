@@ -132,6 +132,7 @@ fn run_dictation_controller(
     let mut inserted_text = String::new();
     let mut insert_origin: Option<i64> = None;
     let mut saved_clipboard: Option<String> = None;
+    let mut live_ax_insert_works = true;
 
     loop {
         let command = if recording.is_some() {
@@ -143,15 +144,19 @@ fn run_dictation_controller(
                         if let Some(text) =
                             transcribe_current_buffer(active, &loaded_model, &corrections)
                         {
-                            match sync_focused_text_to_transcript(
-                                &inserted_text,
-                                &text,
-                                &mut insert_origin,
-                            ) {
-                                Ok(()) => inserted_text = text.clone(),
-                                Err(error) => {
-                                    write_engine_log(&format!("live insert failed: {error}"));
-                                    report_insert_problem(report_status.as_ref(), &error);
+                            if live_ax_insert_works {
+                                match sync_focused_text_with_ax_only(
+                                    &inserted_text,
+                                    &text,
+                                    &mut insert_origin,
+                                ) {
+                                    Ok(()) => inserted_text = text.clone(),
+                                    Err(error) => {
+                                        write_engine_log(&format!(
+                                            "live AX insert disabled: {error}"
+                                        ));
+                                        live_ax_insert_works = false;
+                                    }
                                 }
                             }
                             report_status(DictationStatus::Partial(text));
@@ -183,6 +188,7 @@ fn run_dictation_controller(
                             recording = Some(active);
                             inserted_text.clear();
                             insert_origin = None;
+                            live_ax_insert_works = true;
                             saved_clipboard = read_clipboard_text();
                             #[cfg(target_os = "macos")]
                             write_engine_log(&format!(
@@ -297,6 +303,29 @@ fn shared_prefix_char_count(left: &str, right: &str) -> usize {
         .zip(right.chars())
         .take_while(|(first, second)| first == second)
         .count()
+}
+
+fn sync_focused_text_with_ax_only(
+    previous: &str,
+    current: &str,
+    insert_origin: &mut Option<i64>,
+) -> Result<()> {
+    if current == previous {
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let origin =
+            crate::mac_ax::replace_in_focused_field(*insert_origin, previous, current)?;
+        *insert_origin = Some(origin);
+        write_engine_log(&format!("ax insert ok origin={origin}"));
+        return Ok(());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (previous, current, insert_origin);
+        Err(anyhow!("live insert needs macOS"))
+    }
 }
 
 fn sync_focused_text_to_transcript(
