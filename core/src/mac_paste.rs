@@ -272,6 +272,9 @@ pub fn apply_iterm_session_delta(
     if backspace_count == 0 && text.is_empty() && !press_return {
         return Ok(());
     }
+    if session_id.map(str::is_empty).unwrap_or(true) {
+        return Err(anyhow!("iTerm session was not pinned at key-down"));
+    }
     let deletes = "\u{7f}".repeat(backspace_count);
     let deletes_literal = applescript_literal(&deletes);
     let text_literal = applescript_literal(text);
@@ -293,7 +296,7 @@ pub fn apply_iterm_session_delta(
     end repeat
   end if
   if targetSession is missing value then
-    set targetSession to current session of current window
+    error "pinned iTerm session was not found"
   end if
   tell targetSession
     select

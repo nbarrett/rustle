@@ -473,6 +473,7 @@ fn apply_iterm_text_delta(
             addition.chars().count(),
             addition
         ));
+        write_insert_receipt(session_id, &addition, press_return);
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
@@ -546,7 +547,12 @@ fn sync_focused_text_to_transcript(
         }
         match insert_text_for_target(insert_target, previous, current, false, false) {
             Ok(kind) => return Ok(kind),
-            Err(error) => write_engine_log(&format!("target insert failed: {error}")),
+            Err(error) => {
+                write_engine_log(&format!("target insert failed: {error}"));
+                if target_is_iterm(insert_target) {
+                    return Err(error);
+                }
+            }
         }
     }
     let prefix = shared_prefix_char_count(previous, current);
@@ -561,6 +567,21 @@ fn sync_focused_text_to_transcript(
     }
     write_engine_log("keystroke insert used");
     Ok(InsertKind::Keystroke)
+}
+
+fn write_insert_receipt(session_id: Option<&str>, text: &str, press_return: bool) {
+    let Ok(directory) = crate::config::rustle_directory() else {
+        return;
+    };
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let body = format!(
+        "stamp={stamp}\nsession={}\nreturn={press_return}\ntext={text}\n",
+        session_id.unwrap_or("-")
+    );
+    let _ = std::fs::write(directory.join("last-insert.txt"), body);
 }
 
 fn write_engine_log(message: &str) {
