@@ -248,14 +248,6 @@ fn main() {
             let status_app = app.handle().clone();
             let engine = DictationEngine::start(config, move |status| {
                 eprintln!("[rustle] {status:?}");
-                match &status {
-                    DictationStatus::Listening
-                    | DictationStatus::Partial(_)
-                    | DictationStatus::Transcribing => {
-                        conceal_settings_window(&status_app);
-                    }
-                    _ => {}
-                }
                 let _ = status_app.emit("dictation-status", describe_status(&status));
                 let app = status_app.clone();
                 let status = status.clone();
