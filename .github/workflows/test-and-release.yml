@@ -1,0 +1,109 @@
+name: Test and release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Create a GitHub release and upload the Mac app
+        type: boolean
+        default: false
+      tag:
+        description: Release tag such as v0.1.1 (required when publish is true)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cmake
+        run: brew install cmake
+
+      - name: Run unit tests
+        run: cargo test -p rustle-core
+
+  build-and-release:
+    needs: test
+    if: >-
+      github.ref_type == 'tag' ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish)
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Require a version tag
+        run: |
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Need a tag like v0.1.1, got '${RELEASE_TAG}'"
+            exit 1
+          fi
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cmake
+        run: brew install cmake
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS tools
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Mac app
+        run: >
+          pnpm tauri build --bundles app
+          --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
+
+      - name: Zip the app
+        run: |
+          ditto -c -k --keepParent \
+            target/release/bundle/macos/Rustle.app \
+            "Rustle-${RELEASE_TAG}-macos-aarch64.app.zip"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rustle-${{ env.RELEASE_TAG }}-macos-aarch64
+          path: Rustle-${{ env.RELEASE_TAG }}-macos-aarch64.app.zip
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${RELEASE_TAG}" \
+            --title "Rustle ${RELEASE_TAG}" \
+            --generate-notes \
+            --target "${GITHUB_SHA}" \
+            "Rustle-${RELEASE_TAG}-macos-aarch64.app.zip"

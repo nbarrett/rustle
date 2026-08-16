@@ -57,15 +57,26 @@ pub fn apply_corrections(text: &str, corrections: &[Correction]) -> String {
 }
 
 fn replace_ascii_case_insensitive(haystack: &str, from: &str, to: &str) -> String {
+    if from.is_empty() {
+        return haystack.to_string();
+    }
     let lower_haystack = haystack.to_ascii_lowercase();
     let lower_from = from.to_ascii_lowercase();
+    let bytes = lower_haystack.as_bytes();
     let mut result = String::with_capacity(haystack.len());
     let mut index = 0;
     while let Some(found) = lower_haystack[index..].find(&lower_from) {
         let start = index + found;
-        result.push_str(&haystack[index..start]);
-        result.push_str(to);
-        index = start + from.len();
+        let end = start + from.len();
+        let preceded_by_word = start > 0 && bytes[start - 1].is_ascii_alphanumeric();
+        let followed_by_word = end < bytes.len() && bytes[end].is_ascii_alphanumeric();
+        if preceded_by_word || followed_by_word {
+            result.push_str(&haystack[index..end]);
+        } else {
+            result.push_str(&haystack[index..start]);
+            result.push_str(to);
+        }
+        index = end;
     }
     result.push_str(&haystack[index..]);
     result
@@ -154,5 +165,47 @@ fn approximate_download_size(model_name: &str) -> &'static str {
         "medium.en" => "~1.5 GB",
         "large-v3" => "~3 GB",
         _ => "",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{apply_corrections, Correction};
+
+    fn rule(spoken: &str, written: &str) -> Correction {
+        Correction {
+            spoken: spoken.to_string(),
+            written: written.to_string(),
+        }
+    }
+
+    #[test]
+    fn replaces_whole_word_get_with_git() {
+        let rules = [rule("Get", "Git")];
+        assert_eq!(
+            apply_corrections("I'm just trying to get it to work.", &rules),
+            "I'm just trying to Git it to work."
+        );
+    }
+
+    #[test]
+    fn does_not_replace_get_inside_getting() {
+        let rules = [rule("Get", "Git")];
+        assert_eq!(apply_corrections("getting started", &rules), "getting started");
+    }
+
+    #[test]
+    fn replaces_multi_word_spoken_form() {
+        let rules = [rule("whisper flow", "Wispr Flow")];
+        assert_eq!(
+            apply_corrections("I no longer need whisper flow", &rules),
+            "I no longer need Wispr Flow"
+        );
+    }
+
+    #[test]
+    fn skips_empty_spoken_form() {
+        let rules = [rule("", "Nope")];
+        assert_eq!(apply_corrections("leave this", &rules), "leave this");
     }
 }
