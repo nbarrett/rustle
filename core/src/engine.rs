@@ -133,6 +133,8 @@ fn run_dictation_controller(
     let mut insert_origin: Option<i64> = None;
     let mut saved_clipboard: Option<String> = None;
     let mut live_ax_insert_works = true;
+    #[cfg(target_os = "macos")]
+    let mut insert_target: Option<crate::mac_paste::FrontApp> = None;
 
     loop {
         let command = if recording.is_some() {
@@ -160,28 +162,20 @@ fn run_dictation_controller(
                                 }
                             }
                             if !live_ax_insert_works {
-                                if focused_app_is_ours() {
-                                    write_engine_log(
-                                        "live insert skipped; Rustle is frontmost",
-                                    );
-                                } else if focused_app_is_iterm() {
-                                    match apply_iterm_text_delta(&inserted_text, &text, false) {
-                                        Ok(()) => inserted_text = text.clone(),
-                                        Err(error) => write_engine_log(&format!(
-                                            "live iTerm insert failed: {error}"
-                                        )),
+                                match insert_text_for_target(
+                                    #[cfg(target_os = "macos")]
+                                    insert_target.as_ref(),
+                                    &inserted_text,
+                                    &text,
+                                    false,
+                                ) {
+                                    Ok(InsertKind::Iterm | InsertKind::SystemEvents) => {
+                                        inserted_text = text.clone();
                                     }
-                                } else {
-                                    match apply_system_events_text_delta(
-                                        &inserted_text,
-                                        &text,
-                                        false,
-                                    ) {
-                                        Ok(()) => inserted_text = text.clone(),
-                                        Err(error) => write_engine_log(&format!(
-                                            "live System Events insert failed: {error}"
-                                        )),
-                                    }
+                                    Ok(_) => {}
+                                    Err(error) => write_engine_log(&format!(
+                                        "live insert failed: {error}"
+                                    )),
                                 }
                             }
                             report_status(DictationStatus::Partial(text));
@@ -216,10 +210,23 @@ fn run_dictation_controller(
                             live_ax_insert_works = true;
                             saved_clipboard = read_clipboard_text();
                             #[cfg(target_os = "macos")]
-                            write_engine_log(&format!(
-                                "AXIsProcessTrusted={}",
-                                crate::mac_ax::process_is_trusted()
-                            ));
+                            {
+                                insert_target = crate::mac_paste::insert_target_app();
+                                match &insert_target {
+                                    Some(app) => write_engine_log(&format!(
+                                        "AXIsProcessTrusted={} insert target={} bundle={} pid={} iterm={}",
+                                        crate::mac_ax::process_is_trusted(),
+                                        app.name,
+                                        app.bundle.as_deref().unwrap_or("-"),
+                                        app.pid,
+                                        app.is_iterm()
+                                    )),
+                                    None => write_engine_log(&format!(
+                                        "AXIsProcessTrusted={} insert target unavailable",
+                                        crate::mac_ax::process_is_trusted()
+                                    )),
+                                }
+                            }
                             report_status(DictationStatus::Listening);
                         }
                         Err(error) => report_status(DictationStatus::Failed(format!(
@@ -236,6 +243,8 @@ fn run_dictation_controller(
                         &mut loaded_model,
                         &inserted_text,
                         &mut insert_origin,
+                        #[cfg(target_os = "macos")]
+                        insert_target.as_ref(),
                         report_status.as_ref(),
                     ) {
                         write_engine_log(&format!("final insert failed: {error}"));
@@ -280,6 +289,7 @@ fn transcribe_and_type(
     loaded_model: &mut Option<(String, WhisperTranscriber)>,
     already_inserted: &str,
     insert_origin: &mut Option<i64>,
+    #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
     report_status: &(dyn Fn(DictationStatus) + Send + Sync),
 ) -> Result<()> {
     let (samples, sample_rate, channels) = stop_recording(active);
@@ -303,13 +313,24 @@ fn transcribe_and_type(
         return Ok(());
     }
 
-    let insert_kind = sync_focused_text_to_transcript(already_inserted, spoken, insert_origin)?;
-    if config.press_enter_on_release && !focused_app_is_ours() {
+    let insert_kind = sync_focused_text_to_transcript(
+        already_inserted,
+        spoken,
+        insert_origin,
+        #[cfg(target_os = "macos")]
+        insert_target,
+    )?;
+    if config.press_enter_on_release {
         match insert_kind {
             InsertKind::Iterm => apply_iterm_text_delta("", "", true)?,
-            InsertKind::Unchanged if focused_app_is_iterm() => {
+            InsertKind::Unchanged if target_is_iterm(
+                #[cfg(target_os = "macos")]
+                insert_target,
+            ) =>
+            {
                 apply_iterm_text_delta("", "", true)?;
             }
+            InsertKind::OwnUi => {}
             InsertKind::SystemEvents | InsertKind::Unchanged => {
                 if let Err(error) = apply_system_events_text_delta("", "", true) {
                     write_engine_log(&format!("System Events return failed: {error}"));
@@ -334,29 +355,13 @@ enum InsertKind {
     Iterm,
     SystemEvents,
     Keystroke,
+    OwnUi,
 }
 
-#[cfg(target_os = "macos")]
-fn focused_front_app() -> Option<crate::mac_paste::FrontApp> {
-    let app = crate::mac_paste::frontmost_app();
-    match &app {
-        Some(app) => write_engine_log(&format!(
-            "front app={} bundle={} pid={} iterm={} ours={}",
-            app.name,
-            app.bundle.as_deref().unwrap_or("-"),
-            app.pid,
-            app.is_iterm(),
-            app.is_ours()
-        )),
-        None => write_engine_log("front app unavailable"),
-    }
-    app
-}
-
-fn focused_app_is_iterm() -> bool {
+fn target_is_iterm(#[cfg(target_os = "macos")] target: Option<&crate::mac_paste::FrontApp>) -> bool {
     #[cfg(target_os = "macos")]
     {
-        focused_front_app().is_some_and(|app| app.is_iterm())
+        target.is_some_and(|app| app.is_iterm())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -364,14 +369,32 @@ fn focused_app_is_iterm() -> bool {
     }
 }
 
-fn focused_app_is_ours() -> bool {
+fn insert_text_for_target(
+    #[cfg(target_os = "macos")] target: Option<&crate::mac_paste::FrontApp>,
+    previous: &str,
+    current: &str,
+    press_return: bool,
+) -> Result<InsertKind> {
+    if current == previous && !press_return {
+        return Ok(InsertKind::Unchanged);
+    }
     #[cfg(target_os = "macos")]
     {
-        focused_front_app().is_some_and(|app| app.is_ours())
+        if target.is_some_and(|app| app.is_ours()) {
+            write_engine_log("insert skipped; no other app to type into");
+            return Ok(InsertKind::OwnUi);
+        }
+        if target.is_some_and(|app| app.is_iterm()) {
+            apply_iterm_text_delta(previous, current, press_return)?;
+            return Ok(InsertKind::Iterm);
+        }
+        apply_system_events_text_delta(previous, current, press_return)?;
+        return Ok(InsertKind::SystemEvents);
     }
     #[cfg(not(target_os = "macos"))]
     {
-        false
+        let _ = (previous, current, press_return);
+        Err(anyhow!("insert needs macOS"))
     }
 }
 
@@ -464,6 +487,7 @@ fn sync_focused_text_to_transcript(
     previous: &str,
     current: &str,
     insert_origin: &mut Option<i64>,
+    #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
 ) -> Result<InsertKind> {
     if current == previous {
         return Ok(InsertKind::Unchanged);
@@ -480,23 +504,9 @@ fn sync_focused_text_to_transcript(
                 write_engine_log(&format!("ax insert failed: {error}"));
             }
         }
-        if focused_app_is_ours() {
-            write_engine_log("final insert skipped; Rustle is frontmost");
-            return Ok(InsertKind::Unchanged);
-        }
-        if focused_app_is_iterm() {
-            match apply_iterm_text_delta(previous, current, false) {
-                Ok(()) => return Ok(InsertKind::Iterm),
-                Err(error) => {
-                    write_engine_log(&format!("iterm insert failed: {error}"));
-                }
-            }
-        }
-        match apply_system_events_text_delta(previous, current, false) {
-            Ok(()) => return Ok(InsertKind::SystemEvents),
-            Err(error) => {
-                write_engine_log(&format!("system events insert failed: {error}"));
-            }
+        match insert_text_for_target(insert_target, previous, current, false) {
+            Ok(kind) => return Ok(kind),
+            Err(error) => write_engine_log(&format!("target insert failed: {error}")),
         }
     }
     let prefix = shared_prefix_char_count(previous, current);

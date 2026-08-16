@@ -67,6 +67,7 @@ extern "C" {
     fn CFNumberGetValue(number: CFNumberRef, the_type: i32, value_ptr: *mut c_void) -> u8;
 }
 
+#[derive(Clone, Debug)]
 pub struct FrontApp {
     pub name: String,
     pub bundle: Option<String>,
@@ -103,6 +104,15 @@ impl FrontApp {
 pub fn frontmost_app() -> Option<FrontApp> {
     if let Some(app) = workspace_front_app() {
         if !name_is_chrome_ui(&app.name) {
+            return Some(app);
+        }
+    }
+    window_list_front_app()
+}
+
+pub fn insert_target_app() -> Option<FrontApp> {
+    if let Some(app) = workspace_front_app() {
+        if !app.is_ours() && !name_is_chrome_ui(&app.name) {
             return Some(app);
         }
     }

@@ -87,7 +87,7 @@ impl DictationOverlay {
             return;
         };
         native.set_text(text);
-        native.panel.orderFrontRegardless();
+        native.panel.orderFront(None);
     }
 
     fn hide(&self) {
