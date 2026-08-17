@@ -8,6 +8,8 @@ use objc2_foundation::{
     NSAppleScriptErrorMessage, NSDictionary, NSString,
 };
 use std::ffi::c_void;
+use std::io::Write;
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
 
 type CGEventRef = *mut c_void;
@@ -549,6 +551,50 @@ fn run_applescript_string(source: &str) -> Result<String> {
 }
 
 fn execute_applescript(source: &str) -> Result<Option<String>> {
+    match execute_osascript(source) {
+        Ok(value) => Ok(value),
+        Err(osascript_error) => execute_nsapplescript(source).map_err(|ns_error| {
+            anyhow!("{osascript_error}; in-process AppleScript also failed: {ns_error}")
+        }),
+    }
+}
+
+fn execute_osascript(source: &str) -> Result<Option<String>> {
+    let mut child = Command::new("/usr/bin/osascript")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| anyhow!("could not start osascript: {error}"))?;
+    {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| anyhow!("osascript stdin was unavailable"))?;
+        stdin
+            .write_all(source.as_bytes())
+            .map_err(|error| anyhow!("could not send AppleScript: {error}"))?;
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|error| anyhow!("osascript did not finish: {error}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "osascript failed: {}",
+            stderr.trim().replace('\n', " ")
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(stdout))
+    }
+}
+
+fn execute_nsapplescript(source: &str) -> Result<Option<String>> {
     let source = source.to_string();
     run_on_main(move || {
         let ns_source = NSString::from_str(&source);
