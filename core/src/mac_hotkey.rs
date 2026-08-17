@@ -42,6 +42,10 @@ extern "C" {
     fn CGEventTapEnable(tap: CFTypeRef, enable: bool);
     fn CGEventGetIntegerValueField(event: *mut c_void, field: u32) -> i64;
     fn CGEventGetFlags(event: *mut c_void) -> u64;
+    fn CGPreflightListenEventAccess() -> bool;
+    fn CGRequestListenEventAccess() -> bool;
+    fn CGPreflightPostEventAccess() -> bool;
+    fn CGRequestPostEventAccess() -> bool;
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -116,6 +120,22 @@ extern "C" fn tap_callback(
     event
 }
 
+pub fn listen_event_access_is_granted() -> bool {
+    unsafe { CGPreflightListenEventAccess() }
+}
+
+pub fn request_listen_event_access() -> bool {
+    unsafe { CGRequestListenEventAccess() }
+}
+
+pub fn post_event_access_is_granted() -> bool {
+    unsafe { CGPreflightPostEventAccess() }
+}
+
+pub fn request_post_event_access() -> bool {
+    unsafe { CGRequestPostEventAccess() }
+}
+
 pub fn run_hotkey_tap(
     shared_config: Arc<Mutex<Config>>,
     listening_enabled: Arc<AtomicBool>,
@@ -133,6 +153,11 @@ pub fn run_hotkey_tap(
         (1u64 << EVENT_KEY_DOWN) | (1u64 << EVENT_KEY_UP) | (1u64 << EVENT_FLAGS_CHANGED);
 
     unsafe {
+        write_hotkey_log(&format!(
+            "Input Monitoring preflight={}",
+            CGPreflightListenEventAccess()
+        ));
+
         let tap_port = CGEventTapCreate(
             HID_EVENT_TAP,
             HEAD_INSERT_EVENT_TAP,

@@ -33,6 +33,9 @@ fn describe_status(status: &DictationStatus) -> serde_json::Value {
         DictationStatus::Transcribing => serde_json::json!({ "kind": "transcribing" }),
         DictationStatus::Partial(text) => serde_json::json!({ "kind": "partial", "text": text }),
         DictationStatus::Typed(text) => serde_json::json!({ "kind": "typed", "text": text }),
+        DictationStatus::SettingsPreview(text) => {
+            serde_json::json!({ "kind": "settings_preview", "text": text })
+        }
         DictationStatus::Failed(message) => {
             serde_json::json!({ "kind": "failed", "text": message })
         }
@@ -216,6 +219,11 @@ fn main() {
             None,
         ))
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            {
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                let _ = app.handle().set_dock_visibility(false);
+            }
             let config = load_config().unwrap_or_default();
             let overlay = DictationOverlay::create();
             let tray = build_tray_icon(app)?;

@@ -54,10 +54,10 @@ impl DictationOverlay {
                 set_tray(tray, None, Some("Rustle · Listening"));
                 self.show_message("●  Listening…");
             }
-            DictationStatus::Partial(_) => {
+            DictationStatus::Partial(text) => {
                 self.bump_generation();
                 set_tray(tray, None, Some("Rustle · Listening"));
-                self.show_message("●  Listening…");
+                self.show_message(&format!("●  {text}"));
             }
             DictationStatus::Transcribing => {
                 self.bump_generation();
@@ -77,6 +77,7 @@ impl DictationOverlay {
                 set_tray(tray, Some("Grant"), Some(&format!("Rustle · {message}")));
                 self.show_message(message);
             }
+            DictationStatus::SettingsPreview(_) => {}
             DictationStatus::Idle => {
                 set_tray(tray, None, Some("Rustle"));
                 self.hide();

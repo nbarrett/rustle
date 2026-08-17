@@ -17,6 +17,7 @@ fn main() -> Result<()> {
         DictationStatus::Failed(message) => eprintln!("error: {message}"),
         DictationStatus::NeedsPermission(message) => eprintln!("{message}"),
         DictationStatus::Partial(text) => println!("partial: {text}"),
+        DictationStatus::SettingsPreview(text) => println!("settings: {text}"),
         DictationStatus::Idle => {}
     })?;
 

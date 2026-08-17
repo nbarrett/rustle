@@ -8,7 +8,6 @@ use std::time::Duration;
 const LIVE_TRANSCRIPTION_INTERVAL: Duration = Duration::from_millis(450);
 const LIVE_TRANSCRIPT_MINIMUM_SECONDS: f32 = 0.35;
 const CLIPBOARD_SETTLE: Duration = Duration::from_millis(50);
-const DELETE_SETTLE: Duration = Duration::from_millis(8);
 
 use crate::audio::{
     downmix_to_mono, resample_linear, start_recording, stop_recording, ActiveRecording,
@@ -24,6 +23,7 @@ pub enum DictationStatus {
     Transcribing,
     Partial(String),
     Typed(String),
+    SettingsPreview(String),
     Failed(String),
     NeedsPermission(String),
 }
@@ -91,8 +91,21 @@ fn spawn_hotkey_listener(
     report_status: Arc<dyn Fn(DictationStatus) + Send + Sync>,
     sender: Sender<ControllerCommand>,
 ) {
-    use crate::mac_hotkey::{run_hotkey_tap, HotkeyEdge};
+    use crate::mac_hotkey::{
+        listen_event_access_is_granted, request_listen_event_access, run_hotkey_tap, HotkeyEdge,
+    };
     thread::spawn(move || {
+        if !listen_event_access_is_granted() {
+            let granted = request_listen_event_access();
+            write_engine_log(&format!(
+                "Input Monitoring was off; request returned {granted}"
+            ));
+            if !granted && !listen_event_access_is_granted() {
+                report_status(DictationStatus::NeedsPermission(
+                    "Input Monitoring is off. Enable Rustle there, then quit and reopen.".to_string(),
+                ));
+            }
+        }
         let created = run_hotkey_tap(
             shared_config,
             listening_enabled,
@@ -151,6 +164,10 @@ fn run_dictation_controller(
                                     #[cfg(target_os = "macos")]
                                     insert_target.as_ref(),
                                 )
+                                && !target_uses_typed_keys(
+                                    #[cfg(target_os = "macos")]
+                                    insert_target.as_ref(),
+                                )
                             {
                                 match sync_focused_text_with_ax_only(
                                     &inserted_text,
@@ -166,12 +183,10 @@ fn run_dictation_controller(
                                     }
                                 }
                             }
-                            if !live_ax_insert_works
-                                || target_is_iterm(
-                                    #[cfg(target_os = "macos")]
-                                    insert_target.as_ref(),
-                                )
-                            {
+                            if target_is_iterm(
+                                #[cfg(target_os = "macos")]
+                                insert_target.as_ref(),
+                            ) {
                                 match insert_text_for_target(
                                     #[cfg(target_os = "macos")]
                                     insert_target.as_ref(),
@@ -180,7 +195,11 @@ fn run_dictation_controller(
                                     false,
                                     true,
                                 ) {
-                                    Ok(InsertKind::Iterm | InsertKind::SystemEvents) => {
+                                    Ok(
+                                        InsertKind::Iterm
+                                        | InsertKind::SystemEvents
+                                        | InsertKind::Keystroke,
+                                    ) => {
                                         inserted_text = text.clone();
                                     }
                                     Ok(_) => {}
@@ -189,7 +208,11 @@ fn run_dictation_controller(
                                     )),
                                 }
                             }
-                            report_status(DictationStatus::Partial(text));
+                            report_status(DictationStatus::Partial(text.clone()));
+                            #[cfg(target_os = "macos")]
+                            if insert_target.as_ref().is_some_and(|app| app.is_ours()) {
+                                report_status(DictationStatus::SettingsPreview(text));
+                            }
                         }
                     }
                     continue;
@@ -225,18 +248,23 @@ fn run_dictation_controller(
                                 insert_target = crate::mac_paste::insert_target_app();
                                 match &insert_target {
                                     Some(app) => write_engine_log(&format!(
-                                        "AXIsProcessTrusted={} insert target={} bundle={} pid={} iterm={} session={} session_name={}",
+                                        "AXIsProcessTrusted={} postEvent={} listenEvent={} insert target={} bundle={} pid={} iterm={} paste={} session={} session_name={}",
                                         crate::mac_ax::process_is_trusted(),
+                                        crate::mac_hotkey::post_event_access_is_granted(),
+                                        crate::mac_hotkey::listen_event_access_is_granted(),
                                         app.name,
                                         app.bundle.as_deref().unwrap_or("-"),
                                         app.pid,
                                         app.is_iterm(),
+                                        app.prefers_clipboard_paste(),
                                         app.session_id.as_deref().unwrap_or("-"),
                                         app.session_name.as_deref().unwrap_or("-")
                                     )),
                                     None => write_engine_log(&format!(
-                                        "AXIsProcessTrusted={} insert target unavailable",
-                                        crate::mac_ax::process_is_trusted()
+                                        "AXIsProcessTrusted={} postEvent={} listenEvent={} insert target unavailable",
+                                        crate::mac_ax::process_is_trusted(),
+                                        crate::mac_hotkey::post_event_access_is_granted(),
+                                        crate::mac_hotkey::listen_event_access_is_granted()
                                     )),
                                 }
                             }
@@ -263,7 +291,23 @@ fn run_dictation_controller(
                         write_engine_log(&format!("final insert failed: {error}"));
                         report_insert_problem(report_status.as_ref(), &error);
                     }
-                    restore_clipboard_text(saved_clipboard.take());
+                    let saved = saved_clipboard.take();
+                    #[cfg(target_os = "macos")]
+                    if insert_target
+                        .as_ref()
+                        .is_some_and(|app| app.is_outlook() || app.is_whatsapp())
+                    {
+                        thread::spawn(move || {
+                            thread::sleep(Duration::from_millis(800));
+                            restore_clipboard_text(saved);
+                        });
+                    } else {
+                        restore_clipboard_text(saved);
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        restore_clipboard_text(saved);
+                    }
                     inserted_text.clear();
                     insert_origin = None;
                 }
@@ -360,7 +404,12 @@ fn transcribe_and_type(
                 )?;
             }
             InsertKind::OwnUi => {}
-            InsertKind::SystemEvents | InsertKind::Unchanged => {
+            InsertKind::Keystroke | InsertKind::Unchanged
+                if target_skips_return(
+                    #[cfg(target_os = "macos")]
+                    insert_target,
+                ) => {}
+            InsertKind::SystemEvents => {
                 if let Err(error) = apply_system_events_text_delta("", "", true) {
                     write_engine_log(&format!("System Events return failed: {error}"));
                     thread::sleep(CLIPBOARD_SETTLE);
@@ -374,6 +423,10 @@ fn transcribe_and_type(
         }
     }
     report_status(DictationStatus::Typed(spoken.to_string()));
+    #[cfg(target_os = "macos")]
+    if insert_target.is_some_and(|app| app.is_ours()) {
+        report_status(DictationStatus::SettingsPreview(spoken.to_string()));
+    }
     Ok(())
 }
 
@@ -398,6 +451,32 @@ fn target_is_iterm(#[cfg(target_os = "macos")] target: Option<&crate::mac_paste:
     }
 }
 
+fn target_skips_return(
+    #[cfg(target_os = "macos")] target: Option<&crate::mac_paste::FrontApp>,
+) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        target.is_some_and(|app| app.is_outlook() || app.is_whatsapp())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+fn target_uses_typed_keys(
+    #[cfg(target_os = "macos")] target: Option<&crate::mac_paste::FrontApp>,
+) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        target.is_some_and(|app| app.is_outlook() || app.is_whatsapp())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 fn insert_text_for_target(
     #[cfg(target_os = "macos")] target: Option<&crate::mac_paste::FrontApp>,
     previous: &str,
@@ -414,32 +493,25 @@ fn insert_text_for_target(
             write_engine_log("insert skipped; no other app to type into");
             return Ok(InsertKind::OwnUi);
         }
+        if target.is_some_and(|app| app.is_outlook() || app.is_whatsapp()) {
+            if is_live {
+                return Ok(InsertKind::Unchanged);
+            }
+            if let Some(app) = target {
+                crate::mac_paste::paste_string_into_pid(app.pid, current)?;
+                write_engine_log(&format!(
+                    "paste insert used pid={} name={} chars={} text={:?}",
+                    app.pid,
+                    app.name,
+                    current.chars().count(),
+                    current
+                ));
+                write_insert_receipt(None, current, false);
+            }
+            return Ok(InsertKind::Keystroke);
+        }
         let prefix = shared_prefix_char_count(previous, current);
         let addition: String = current.chars().skip(prefix).collect();
-        if crate::mac_ax::process_is_trusted() {
-            if let Some(app) = target {
-                if let Err(error) = crate::mac_paste::activate_pid(app.pid) {
-                    write_engine_log(&format!("activate failed: {error}"));
-                }
-                if prefix < previous.chars().count() {
-                    crate::mac_paste::post_delete_keystrokes(
-                        previous.chars().count() - prefix,
-                    )?;
-                }
-                crate::mac_paste::post_unicode_to_pid(app.pid, &addition)?;
-                if press_return {
-                    crate::mac_paste::post_return_keystroke()?;
-                }
-                write_engine_log(&format!(
-                    "unicode insert used pid={} chars={} return={press_return} text={:?}",
-                    app.pid,
-                    addition.chars().count(),
-                    addition
-                ));
-                write_insert_receipt(app.session_id.as_deref(), &addition, press_return);
-                return Ok(InsertKind::Keystroke);
-            }
-        }
         if target.is_some_and(|app| app.is_iterm()) {
             if is_live && !current.starts_with(previous) {
                 write_engine_log("iterm live insert skipped; transcript was revised");
@@ -452,6 +524,36 @@ fn insert_text_for_target(
                 target.and_then(|app| app.session_id.as_deref()),
             )?;
             return Ok(InsertKind::Iterm);
+        }
+        if let Some(app) = target {
+            if prefix < previous.chars().count() {
+                if let Err(error) = crate::mac_paste::activate_pid(app.pid) {
+                    write_engine_log(&format!("activate failed: {error}"));
+                }
+                crate::mac_paste::post_delete_keystrokes(
+                    previous.chars().count() - prefix,
+                )?;
+            }
+            if !addition.is_empty() {
+                if let Err(error) = crate::mac_paste::activate_pid(app.pid) {
+                    write_engine_log(&format!("activate failed: {error}"));
+                }
+                crate::mac_paste::post_unicode_to_pid(app.pid, &addition)?;
+            } else if let Err(error) = crate::mac_paste::activate_pid(app.pid) {
+                write_engine_log(&format!("activate failed: {error}"));
+            }
+            if press_return {
+                crate::mac_paste::post_return_keystroke()?;
+            }
+            write_engine_log(&format!(
+                "unicode insert used pid={} name={} chars={} return={press_return} text={:?}",
+                app.pid,
+                app.name,
+                addition.chars().count(),
+                addition
+            ));
+            write_insert_receipt(app.session_id.as_deref(), &addition, press_return);
+            return Ok(InsertKind::Keystroke);
         }
         apply_system_events_text_delta(previous, current, press_return)?;
         return Ok(InsertKind::SystemEvents);
@@ -521,14 +623,8 @@ fn apply_iterm_text_delta(
 }
 
 fn report_insert_problem(report_status: &(dyn Fn(DictationStatus) + Send + Sync), error: &anyhow::Error) {
-    let message = error.to_string();
-    if message.contains("AX -25211") {
-        report_status(DictationStatus::NeedsPermission(
-            "Accessibility is off. Use Privacy & Security → Accessibility, then quit and reopen.".to_string(),
-        ));
-    } else {
-        report_status(DictationStatus::Failed(message));
-    }
+    write_engine_log(&format!("insert problem: {error}"));
+    report_status(DictationStatus::Failed(error.to_string()));
 }
 
 fn shared_prefix_char_count(left: &str, right: &str) -> usize {
@@ -572,7 +668,7 @@ fn sync_focused_text_to_transcript(
     }
     #[cfg(target_os = "macos")]
     {
-        if !target_is_iterm(insert_target) {
+        if !target_is_iterm(insert_target) && !target_uses_typed_keys(insert_target) {
             match crate::mac_ax::replace_in_focused_field(*insert_origin, previous, current) {
                 Ok(origin) => {
                     *insert_origin = Some(origin);
@@ -585,27 +681,18 @@ fn sync_focused_text_to_transcript(
             }
         }
         match insert_text_for_target(insert_target, previous, current, false, false) {
-            Ok(kind) => return Ok(kind),
+            Ok(kind) => Ok(kind),
             Err(error) => {
                 write_engine_log(&format!("target insert failed: {error}"));
-                if target_is_iterm(insert_target) {
-                    return Err(error);
-                }
+                Err(error)
             }
         }
     }
-    let prefix = shared_prefix_char_count(previous, current);
-    let delete_count = previous.chars().count().saturating_sub(prefix);
-    let addition: String = current.chars().skip(prefix).collect();
-    if delete_count > 0 {
-        post_delete_keystrokes(delete_count)?;
-        thread::sleep(DELETE_SETTLE);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = insert_origin;
+        Err(anyhow!("insert needs macOS"))
     }
-    if !addition.is_empty() {
-        paste_text(&addition)?;
-    }
-    write_engine_log("keystroke insert used");
-    Ok(InsertKind::Keystroke)
 }
 
 fn write_insert_receipt(session_id: Option<&str>, text: &str, press_return: bool) {
@@ -642,26 +729,6 @@ fn write_engine_log(message: &str) {
         });
 }
 
-fn paste_text(text: &str) -> Result<()> {
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|error| anyhow!("clipboard unavailable: {error}"))?;
-    clipboard
-        .set_text(text.to_string())
-        .map_err(|error| anyhow!("failed to set clipboard: {error}"))?;
-    thread::sleep(CLIPBOARD_SETTLE);
-    #[cfg(target_os = "macos")]
-    {
-        match crate::mac_paste::post_system_events_command_v() {
-            Ok(()) => {
-                write_engine_log("system events paste used");
-                return Ok(());
-            }
-            Err(error) => write_engine_log(&format!("system events paste failed: {error}")),
-        }
-    }
-    post_paste_keystroke()
-}
-
 fn read_clipboard_text() -> Option<String> {
     arboard::Clipboard::new()
         .ok()
@@ -678,28 +745,8 @@ fn restore_clipboard_text(text: Option<String>) {
 }
 
 #[cfg(target_os = "macos")]
-fn post_paste_keystroke() -> Result<()> {
-    crate::mac_paste::post_command_v_keystroke()
-}
-
-#[cfg(target_os = "macos")]
-fn post_delete_keystrokes(count: usize) -> Result<()> {
-    crate::mac_paste::post_delete_keystrokes(count)
-}
-
-#[cfg(target_os = "macos")]
 fn post_return_keystroke() -> Result<()> {
     crate::mac_paste::post_return_keystroke()
-}
-
-#[cfg(not(target_os = "macos"))]
-fn post_paste_keystroke() -> Result<()> {
-    Err(anyhow!("paste is only implemented on macOS"))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn post_delete_keystrokes(_count: usize) -> Result<()> {
-    Err(anyhow!("delete is only implemented on macOS"))
 }
 
 #[cfg(not(target_os = "macos"))]

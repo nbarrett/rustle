@@ -2,7 +2,10 @@ use anyhow::{anyhow, Result};
 use dispatch2::DispatchQueue;
 use objc2::runtime::AnyObject;
 use objc2::{msg_send, AnyThread, MainThreadMarker};
-use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication, NSWorkspace};
+use objc2_app_kit::{
+    NSApplicationActivationOptions, NSPasteboard, NSPasteboardTypeString, NSRunningApplication,
+    NSWorkspace,
+};
 use objc2_foundation::{
     NSAppleEventDescriptor, NSAppleScript, NSAppleScriptErrorBriefMessage,
     NSAppleScriptErrorMessage, NSDictionary, NSString,
@@ -21,6 +24,7 @@ type CFNumberRef = *const c_void;
 type CFTypeRef = *const c_void;
 
 const HID_EVENT_TAP: u32 = 0;
+const SESSION_EVENT_TAP: u32 = 1;
 const EVENT_SOURCE_STATE_HID_SYSTEM: i32 = 1;
 const EVENT_SOURCE_STATE_COMBINED_SESSION: i32 = 0;
 const KEYCODE_COMMAND: u16 = 0x37;
@@ -104,6 +108,38 @@ impl FrontApp {
                 .as_deref()
                 .is_some_and(|bundle| bundle.eq_ignore_ascii_case("com.annix.rustle"))
     }
+
+    pub fn is_outlook(&self) -> bool {
+        self.name.to_ascii_lowercase().contains("outlook")
+            || self
+                .bundle
+                .as_deref()
+                .is_some_and(|bundle| bundle.eq_ignore_ascii_case("com.microsoft.Outlook"))
+    }
+
+    pub fn is_whatsapp(&self) -> bool {
+        self.name.to_ascii_lowercase().contains("whatsapp")
+            || self
+                .bundle
+                .as_deref()
+                .is_some_and(|bundle| bundle.eq_ignore_ascii_case("net.whatsapp.WhatsApp"))
+    }
+
+    pub fn prefers_clipboard_paste(&self) -> bool {
+        let lower = self.name.to_ascii_lowercase();
+        self.is_outlook()
+            || self.is_whatsapp()
+            || lower.contains("teams")
+            || lower.contains("slack")
+            || lower.contains("chrome")
+            || lower.contains("edge")
+            || lower.contains("firefox")
+            || lower.contains("safari")
+            || self.bundle.as_deref().is_some_and(|bundle| {
+                bundle.eq_ignore_ascii_case("com.microsoft.teams2")
+                    || bundle.eq_ignore_ascii_case("com.tinyspeck.slackmacgap")
+            })
+    }
 }
 
 pub fn frontmost_app() -> Option<FrontApp> {
@@ -117,10 +153,10 @@ pub fn frontmost_app() -> Option<FrontApp> {
 
 pub fn insert_target_app() -> Option<FrontApp> {
     let mut app = if let Some(app) = workspace_front_app() {
-        if !app.is_ours() && !name_is_chrome_ui(&app.name) {
-            Some(app)
-        } else {
+        if name_is_chrome_ui(&app.name) {
             window_list_front_app()
+        } else {
+            Some(app)
         }
     } else {
         window_list_front_app()
@@ -132,6 +168,43 @@ pub fn insert_target_app() -> Option<FrontApp> {
         }
     }
     Some(app)
+}
+
+pub fn settings_window_is_on_screen() -> bool {
+    unsafe {
+        let windows = CGWindowListCopyWindowInfo(WINDOW_LIST_ON_SCREEN_AND_EXCLUDE_DESKTOP, 0);
+        if windows.is_null() {
+            return false;
+        }
+        let self_pid = std::process::id() as i32;
+        let count = CFArrayGetCount(windows);
+        let layer_key = cf_string("kCGWindowLayer");
+        let pid_key = cf_string("kCGWindowOwnerPID");
+        let mut found = false;
+        for index in 0..count {
+            let dictionary = CFArrayGetValueAtIndex(windows, index) as CFDictionaryRef;
+            if dictionary.is_null() {
+                continue;
+            }
+            let Some(layer) = dictionary_i32(dictionary, layer_key) else {
+                continue;
+            };
+            if layer != 0 {
+                continue;
+            }
+            let Some(pid) = dictionary_i32(dictionary, pid_key) else {
+                continue;
+            };
+            if pid == self_pid {
+                found = true;
+                break;
+            }
+        }
+        CFRelease(layer_key as CFTypeRef);
+        CFRelease(pid_key as CFTypeRef);
+        CFRelease(windows);
+        found
+    }
 }
 
 pub fn pin_front_iterm_session() -> Option<(String, String)> {
@@ -246,6 +319,20 @@ fn window_list_front_app() -> Option<FrontApp> {
         CFRelease(windows);
         found
     }
+}
+
+pub fn apply_outlook_plain_text(text: &str) -> Result<()> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    let text_literal = applescript_literal(text);
+    let script = format!(
+        r#"tell application "Microsoft Outlook"
+  activate
+  make new outgoing message with properties {{plain text content:{text_literal}}}
+end tell"#
+    );
+    run_applescript(&script)
 }
 
 pub fn apply_system_events_delta(
@@ -427,14 +514,34 @@ end tell"#
     }
 }
 
+pub fn write_pasteboard_string(text: &str) -> Result<()> {
+    let pasteboard = NSPasteboard::generalPasteboard();
+    pasteboard.clearContents();
+    let string = NSString::from_str(text);
+    if !unsafe { pasteboard.setString_forType(&string, NSPasteboardTypeString) } {
+        return Err(anyhow!("could not write the pasteboard"));
+    }
+    Ok(())
+}
+
+pub fn paste_string_into_pid(pid: i32, text: &str) -> Result<()> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    activate_pid(pid)?;
+    write_pasteboard_string(text)?;
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    post_command_v_keystroke()?;
+    Ok(())
+}
+
 pub fn post_command_v_keystroke() -> Result<()> {
-    let target_pid = frontmost_app().map(|app| app.pid);
     unsafe {
         let source = create_event_source()?;
-        post_key(source, KEYCODE_COMMAND, true, EVENT_FLAG_COMMAND, target_pid);
-        post_key(source, KEYCODE_ANSI_V, true, EVENT_FLAG_COMMAND, target_pid);
-        post_key(source, KEYCODE_ANSI_V, false, EVENT_FLAG_COMMAND, target_pid);
-        post_key(source, KEYCODE_COMMAND, false, 0, target_pid);
+        post_key(source, KEYCODE_COMMAND, true, EVENT_FLAG_COMMAND);
+        post_key(source, KEYCODE_ANSI_V, true, EVENT_FLAG_COMMAND);
+        post_key(source, KEYCODE_ANSI_V, false, EVENT_FLAG_COMMAND);
+        post_key(source, KEYCODE_COMMAND, false, 0);
         CFRelease(source as *const c_void);
     }
     Ok(())
@@ -444,12 +551,11 @@ pub fn post_delete_keystrokes(count: usize) -> Result<()> {
     if count == 0 {
         return Ok(());
     }
-    let target_pid = frontmost_app().map(|app| app.pid);
     unsafe {
         let source = create_event_source()?;
         for _ in 0..count {
-            post_key(source, KEYCODE_DELETE, true, 0, target_pid);
-            post_key(source, KEYCODE_DELETE, false, 0, target_pid);
+            post_key(source, KEYCODE_DELETE, true, 0);
+            post_key(source, KEYCODE_DELETE, false, 0);
         }
         CFRelease(source as *const c_void);
     }
@@ -464,7 +570,7 @@ pub fn activate_pid(pid: i32) -> Result<()> {
     if !app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps) {
         return Err(anyhow!("could not activate process {pid}"));
     }
-    std::thread::sleep(std::time::Duration::from_millis(40));
+    std::thread::sleep(std::time::Duration::from_millis(80));
     Ok(())
 }
 
@@ -495,11 +601,10 @@ pub fn post_unicode_to_pid(pid: i32, text: &str) -> Result<()> {
 }
 
 pub fn post_return_keystroke() -> Result<()> {
-    let target_pid = frontmost_app().map(|app| app.pid);
     unsafe {
         let source = create_event_source()?;
-        post_key(source, KEYCODE_RETURN, true, 0, target_pid);
-        post_key(source, KEYCODE_RETURN, false, 0, target_pid);
+        post_key(source, KEYCODE_RETURN, true, 0);
+        post_key(source, KEYCODE_RETURN, false, 0);
         CFRelease(source as *const c_void);
     }
     Ok(())
@@ -519,25 +624,20 @@ fn create_event_source() -> Result<CGEventSourceRef> {
     }
 }
 
-unsafe fn post_key(
-    source: CGEventSourceRef,
-    keycode: u16,
-    key_down: bool,
-    flags: u64,
-    target_pid: Option<i32>,
-) {
+unsafe fn post_typed_event(event: CGEventRef) {
+    CGEventPost(HID_EVENT_TAP, event);
+    CGEventPost(SESSION_EVENT_TAP, event);
+}
+
+unsafe fn post_key(source: CGEventSourceRef, keycode: u16, key_down: bool, flags: u64) {
     let event = CGEventCreateKeyboardEvent(source, keycode, key_down);
     if event.is_null() {
         return;
     }
     CGEventSetFlags(event, flags);
-    if let Some(pid) = target_pid {
-        CGEventPostToPid(pid, event);
-    } else {
-        CGEventPost(HID_EVENT_TAP, event);
-    }
+    post_typed_event(event);
     CFRelease(event as *const c_void);
-    std::thread::sleep(std::time::Duration::from_millis(4));
+    std::thread::sleep(std::time::Duration::from_millis(8));
 }
 
 fn run_applescript(source: &str) -> Result<()> {

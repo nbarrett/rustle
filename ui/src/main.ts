@@ -53,6 +53,7 @@ const elements = {
   downloadStatus: requiredElement<HTMLParagraphElement>("download-status"),
   enterToggle: requiredElement<HTMLInputElement>("enter-toggle"),
   launchToggle: requiredElement<HTMLInputElement>("launch-toggle"),
+  liveTranscript: requiredElement<HTMLTextAreaElement>("live-transcript"),
   historyList: requiredElement<HTMLDivElement>("history-list"),
   clearHistory: requiredElement<HTMLButtonElement>("clear-history"),
   correctionsList: requiredElement<HTMLDivElement>("corrections-list"),
@@ -294,6 +295,9 @@ function applyStatusEvent(payload: DictationStatusEvent): void {
       setStatus("Typed", "status-live");
       setInsertNote("");
       addHistoryEntry(payload.text);
+      break;
+    case "settings_preview":
+      elements.liveTranscript.value = payload.text;
       break;
     case "needs_permission":
       setInsertNote(payload.text);

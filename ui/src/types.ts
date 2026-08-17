@@ -38,6 +38,7 @@ export type DictationStatusEvent =
   | { kind: "transcribing" }
   | { kind: "partial"; text: string }
   | { kind: "typed"; text: string }
+  | { kind: "settings_preview"; text: string }
   | { kind: "failed"; text: string }
   | { kind: "needs_permission"; text: string };
 
