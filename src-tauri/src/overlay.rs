@@ -39,10 +39,12 @@ pub struct DictationOverlay {
 
 impl DictationOverlay {
     pub fn create() -> Self {
-        Self {
+        let overlay = Self {
             native: NativeOverlay::try_create().map(Arc::new),
             generation: Arc::new(AtomicU64::new(0)),
-        }
+        };
+        overlay.keep_panel_alive();
+        overlay
     }
 
     pub fn apply(&self, app: &AppHandle, tray: &TrayIcon, status: &DictationStatus) {
@@ -87,14 +89,20 @@ impl DictationOverlay {
             return;
         };
         native.set_text(text);
+        native.panel.setAlphaValue(1.0);
         native.panel.orderFront(None);
     }
 
     fn hide(&self) {
+        self.keep_panel_alive();
+    }
+
+    fn keep_panel_alive(&self) {
         let Some(native) = self.native.as_ref() else {
             return;
         };
-        native.panel.orderOut(None);
+        native.panel.setAlphaValue(0.0);
+        native.panel.orderFront(None);
     }
 
     fn bump_generation(&self) {
@@ -116,7 +124,8 @@ impl DictationOverlay {
                     return;
                 }
                 if let Some(native) = native.as_ref() {
-                    native.panel.orderOut(None);
+                    native.panel.setAlphaValue(0.0);
+                    native.panel.orderFront(None);
                 }
                 set_tray(&tray, None, Some("Rustle"));
             });
