@@ -146,7 +146,12 @@ fn run_dictation_controller(
                         if let Some(text) =
                             transcribe_current_buffer(active, &loaded_model, &corrections)
                         {
-                            if live_ax_insert_works {
+                            if live_ax_insert_works
+                                && !target_is_iterm(
+                                    #[cfg(target_os = "macos")]
+                                    insert_target.as_ref(),
+                                )
+                            {
                                 match sync_focused_text_with_ax_only(
                                     &inserted_text,
                                     &text,
@@ -161,7 +166,12 @@ fn run_dictation_controller(
                                     }
                                 }
                             }
-                            if !live_ax_insert_works {
+                            if !live_ax_insert_works
+                                || target_is_iterm(
+                                    #[cfg(target_os = "macos")]
+                                    insert_target.as_ref(),
+                                )
+                            {
                                 match insert_text_for_target(
                                     #[cfg(target_os = "macos")]
                                     insert_target.as_ref(),
@@ -562,14 +572,16 @@ fn sync_focused_text_to_transcript(
     }
     #[cfg(target_os = "macos")]
     {
-        match crate::mac_ax::replace_in_focused_field(*insert_origin, previous, current) {
-            Ok(origin) => {
-                *insert_origin = Some(origin);
-                write_engine_log(&format!("ax insert ok origin={origin}"));
-                return Ok(InsertKind::Accessibility);
-            }
-            Err(error) => {
-                write_engine_log(&format!("ax insert failed: {error}"));
+        if !target_is_iterm(insert_target) {
+            match crate::mac_ax::replace_in_focused_field(*insert_origin, previous, current) {
+                Ok(origin) => {
+                    *insert_origin = Some(origin);
+                    write_engine_log(&format!("ax insert ok origin={origin}"));
+                    return Ok(InsertKind::Accessibility);
+                }
+                Err(error) => {
+                    write_engine_log(&format!("ax insert failed: {error}"));
+                }
             }
         }
         match insert_text_for_target(insert_target, previous, current, false, false) {
