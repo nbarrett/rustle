@@ -158,9 +158,39 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          gh release create "${RELEASE_TAG}" \
-            --title "Rustle ${RELEASE_TAG}" \
-            --generate-notes \
-            --target "${GITHUB_SHA}" \
-            "Rustle-${RELEASE_TAG}-macos-aarch64.app.zip"
+          set -euo pipefail
+          ZIP="Rustle-${RELEASE_TAG}-macos-aarch64.app.zip"
+          attempt=1
+          while true; do
+            if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+              gh release upload "${RELEASE_TAG}" "${ZIP}" --clobber
+              echo "Release ${RELEASE_TAG} already exists; uploaded ${ZIP}"
+              exit 0
+            fi
+            create_ok=1
+            if [[ "${REF_TYPE}" == "tag" ]]; then
+              gh release create "${RELEASE_TAG}" \
+                --title "Rustle ${RELEASE_TAG}" \
+                --generate-notes \
+                "${ZIP}" || create_ok=0
+            else
+              gh release create "${RELEASE_TAG}" \
+                --title "Rustle ${RELEASE_TAG}" \
+                --generate-notes \
+                --target "${REF_NAME}" \
+                "${ZIP}" || create_ok=0
+            fi
+            if [[ "${create_ok}" == "1" ]]; then
+              exit 0
+            fi
+            if [[ "${attempt}" -ge 5 ]]; then
+              echo "Could not create release after ${attempt} attempts"
+              exit 1
+            fi
+            echo "Release create failed; retrying in 15s (attempt ${attempt})"
+            attempt=$((attempt + 1))
+            sleep 15
+          done
