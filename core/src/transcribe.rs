@@ -24,6 +24,11 @@ impl WhisperTranscriber {
         params.set_single_segment(true);
         params.set_suppress_blank(true);
         params.set_suppress_non_speech_tokens(true);
+        let british_prompt = crate::uk_english::prefers_british_english()
+            .then_some("British English spelling.");
+        if let Some(prompt) = british_prompt {
+            params.set_initial_prompt(prompt);
+        }
 
         state.full(params, audio)?;
 

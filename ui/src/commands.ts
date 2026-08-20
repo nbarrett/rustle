@@ -16,8 +16,8 @@ export function getAppVersion(): Promise<string> {
   return getVersion();
 }
 
-export function saveAndApplyConfig(config: Config): Promise<void> {
-  return invoke("save_and_apply_config", { newConfig: config });
+export function saveAndApplyConfig(config: Config, hideWindow = true): Promise<void> {
+  return invoke("save_and_apply_config", { newConfig: config, hideWindow });
 }
 
 export function listMicrophones(): Promise<string[]> {

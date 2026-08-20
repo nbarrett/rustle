@@ -370,6 +370,72 @@ select {
   margin-bottom: 2px;
 }
 
+.history-text {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.history-word {
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.history-word:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.word-replace {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, #000 35%, transparent);
+  z-index: 20;
+  padding: 16px;
+}
+
+.word-replace[hidden] {
+  display: none;
+}
+
+.word-replace-card {
+  width: min(320px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.word-replace-label {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.word-replace-from {
+  font-weight: 600;
+}
+
+.word-replace-card input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--background);
+}
+
+.word-replace-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .insert-banner {
   display: flex;
   flex-direction: column;

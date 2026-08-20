@@ -64,12 +64,19 @@ const elements = {
   insertBanner: requiredElement<HTMLDivElement>("insert-banner"),
   insertNote: requiredElement<HTMLParagraphElement>("insert-note"),
   openAccessibility: requiredElement<HTMLButtonElement>("open-accessibility"),
+  wordReplace: requiredElement<HTMLDivElement>("word-replace"),
+  wordReplaceFrom: requiredElement<HTMLSpanElement>("word-replace-from"),
+  wordReplaceTo: requiredElement<HTMLInputElement>("word-replace-to"),
+  wordReplaceCancel: requiredElement<HTMLButtonElement>("word-replace-cancel"),
+  wordReplaceSave: requiredElement<HTMLButtonElement>("word-replace-save"),
 };
 
 let dictationHistory: HistoryEntry[] = [];
 let selectedModelFileName = DEFAULT_MODEL_FILE_NAME;
 let corrections: Correction[] = [];
 let modelCatalog: ModelChoice[] = [];
+let wordReplaceEntryIndex: number | null = null;
+let wordReplaceSpoken = "";
 
 function isHistoryEntry(value: unknown): value is HistoryEntry {
   if (typeof value !== "object" || value === null) {
@@ -104,17 +111,113 @@ function saveHistory(): void {
 
 function renderHistory(): void {
   elements.historyList.replaceChildren();
-  for (const entry of dictationHistory) {
+  dictationHistory.forEach((entry, entryIndex) => {
     const item = document.createElement("div");
     item.className = "history-item";
     const time = document.createElement("span");
     time.className = "history-time";
     time.textContent = entry.time;
     const text = document.createElement("span");
-    text.textContent = entry.text;
+    text.className = "history-text";
+    appendHistoryWords(text, entry.text, entryIndex);
     item.append(time, text);
     elements.historyList.appendChild(item);
+  });
+}
+
+function appendHistoryWords(
+  container: HTMLElement,
+  text: string,
+  entryIndex: number,
+): void {
+  const parts = text.split(/([A-Za-z0-9]+(?:['’][A-Za-z0-9]+)*)/);
+  for (const part of parts) {
+    if (part === "") {
+      continue;
+    }
+    if (/^[A-Za-z0-9]/.test(part)) {
+      const word = document.createElement("span");
+      word.className = "history-word";
+      word.textContent = part;
+      word.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openWordReplacement(entryIndex, part);
+      });
+      container.append(word);
+    } else {
+      container.append(part);
+    }
   }
+}
+
+function openWordReplacement(entryIndex: number, spoken: string): void {
+  wordReplaceEntryIndex = entryIndex;
+  wordReplaceSpoken = spoken;
+  elements.wordReplaceFrom.textContent = spoken;
+  const existing = corrections.find(
+    (rule) => rule.spoken.toLocaleLowerCase() === spoken.toLocaleLowerCase(),
+  );
+  elements.wordReplaceTo.value = existing?.written ?? "";
+  elements.wordReplace.hidden = false;
+  elements.wordReplaceTo.focus();
+  elements.wordReplaceTo.select();
+}
+
+function closeWordReplacement(): void {
+  wordReplaceEntryIndex = null;
+  wordReplaceSpoken = "";
+  elements.wordReplace.hidden = true;
+  elements.wordReplaceTo.value = "";
+}
+
+function replaceWordInText(text: string, spoken: string, written: string): string {
+  const escaped = spoken.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(escaped, "gi"), written);
+}
+
+async function persistCorrections(): Promise<void> {
+  const config = await getConfig();
+  await saveAndApplyConfig(
+    {
+      ...config,
+      corrections: corrections
+        .map((rule) => ({ spoken: rule.spoken.trim(), written: rule.written.trim() }))
+        .filter((rule) => rule.spoken !== ""),
+    },
+    false,
+  );
+}
+
+async function saveWordReplacement(): Promise<void> {
+  const written = elements.wordReplaceTo.value.trim();
+  const spoken = wordReplaceSpoken.trim();
+  const entryIndex = wordReplaceEntryIndex;
+  if (spoken === "" || written === "" || entryIndex === null) {
+    return;
+  }
+  const existing = corrections.find(
+    (rule) => rule.spoken.toLocaleLowerCase() === spoken.toLocaleLowerCase(),
+  );
+  if (existing) {
+    existing.written = written;
+  } else {
+    corrections.push({ spoken, written });
+  }
+  const entry = dictationHistory[entryIndex];
+  if (entry) {
+    entry.text = replaceWordInText(entry.text, spoken, written);
+    saveHistory();
+  }
+  renderCorrections();
+  renderHistory();
+  closeWordReplacement();
+  try {
+    await persistCorrections();
+  } catch {
+    return;
+  }
+  fitWindowToContent();
 }
 
 function addHistoryEntry(text: string | undefined): void {
@@ -434,6 +537,27 @@ async function initialise(): Promise<void> {
     saveHistory();
     renderHistory();
     fitWindowToContent();
+  });
+  elements.wordReplaceCancel.addEventListener("click", () => {
+    closeWordReplacement();
+  });
+  elements.wordReplaceSave.addEventListener("click", () => {
+    void saveWordReplacement();
+  });
+  elements.wordReplaceTo.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void saveWordReplacement();
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeWordReplacement();
+    }
+  });
+  elements.wordReplace.addEventListener("click", (event) => {
+    if (event.target === elements.wordReplace) {
+      closeWordReplacement();
+    }
   });
   setUpTabs();
   fitWindowToContent();

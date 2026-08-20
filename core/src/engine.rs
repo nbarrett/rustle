@@ -15,6 +15,7 @@ use crate::audio::{
 };
 use crate::config::{apply_corrections, resolve_model_path, Config, Correction};
 use crate::transcribe::WhisperTranscriber;
+use crate::uk_english::apply_locale_english_spelling;
 
 #[derive(Clone, Debug)]
 pub enum DictationStatus {
@@ -148,6 +149,8 @@ fn run_dictation_controller(
     let mut live_ax_insert_works = true;
     #[cfg(target_os = "macos")]
     let mut insert_target: Option<crate::mac_paste::FrontApp> = None;
+    #[cfg(target_os = "macos")]
+    let mut silenced_output: Option<crate::mac_output::SilencedOutput> = None;
 
     loop {
         let command = if recording.is_some() {
@@ -229,10 +232,19 @@ fn run_dictation_controller(
         match command {
             ControllerCommand::StartRecording => {
                 if recording.is_none() {
+                    #[cfg(target_os = "macos")]
+                    {
+                        silenced_output = crate::mac_output::silence_system_output();
+                        write_engine_log(&format!("system output silenced={silenced_output:?}"));
+                    }
                     let config = shared_config.lock().unwrap().clone();
                     if let Err(error) =
                         ensure_model_loaded(&mut loaded_model, &config.model_file_name)
                     {
+                        #[cfg(target_os = "macos")]
+                        if let Some(saved) = silenced_output.take() {
+                            crate::mac_output::restore_system_output(saved);
+                        }
                         report_status(DictationStatus::Failed(format!("{error}")));
                         continue;
                     }
@@ -270,14 +282,24 @@ fn run_dictation_controller(
                             }
                             report_status(DictationStatus::Listening);
                         }
-                        Err(error) => report_status(DictationStatus::Failed(format!(
-                            "recording failed: {error}"
-                        ))),
+                        Err(error) => {
+                            #[cfg(target_os = "macos")]
+                            if let Some(saved) = silenced_output.take() {
+                                crate::mac_output::restore_system_output(saved);
+                            }
+                            report_status(DictationStatus::Failed(format!(
+                                "recording failed: {error}"
+                            )));
+                        }
                     }
                 }
             }
             ControllerCommand::StopRecording => {
                 if let Some(active) = recording.take() {
+                    #[cfg(target_os = "macos")]
+                    if let Some(saved) = silenced_output.take() {
+                        crate::mac_output::restore_system_output(saved);
+                    }
                     if let Err(error) = transcribe_and_type(
                         active,
                         &shared_config,
@@ -331,7 +353,8 @@ fn transcribe_current_buffer(
     let mono = downmix_to_mono(&captured, active.channels());
     let audio = resample_linear(&mono, active.sample_rate(), WHISPER_SAMPLE_RATE);
     let transcript = transcriber.transcribe(&audio).ok()?;
-    let corrected = apply_corrections(transcript.trim(), corrections);
+    let regional = apply_locale_english_spelling(transcript.trim());
+    let corrected = apply_corrections(&regional, corrections);
     let trimmed = corrected.trim();
     if trimmed.is_empty() {
         None
@@ -362,7 +385,8 @@ fn transcribe_and_type(
         .ok_or_else(|| anyhow!("model was not loaded"))?
         .1;
     let raw_transcript = transcriber.transcribe(&audio)?;
-    let corrected = apply_corrections(raw_transcript.trim(), &config.corrections);
+    let regional = apply_locale_english_spelling(raw_transcript.trim());
+    let corrected = apply_corrections(&regional, &config.corrections);
     let spoken = corrected.trim();
 
     if spoken.is_empty() {

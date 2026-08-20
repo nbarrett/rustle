@@ -10,8 +10,10 @@ use rustle_core::engine::{DictationEngine, DictationStatus};
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_autostart::{AutoLaunchManager, MacosLauncher};
+
+const LAUNCHED_AT_LOGIN_ARGUMENT: &str = "--launched-at-login";
 
 mod overlay;
 
@@ -59,6 +61,7 @@ fn get_config(state: State<'_, Mutex<EngineState>>) -> Config {
 fn save_and_apply_config(
     app: AppHandle,
     new_config: Config,
+    hide_window: Option<bool>,
     state: State<'_, Mutex<EngineState>>,
 ) -> Result<(), String> {
     save_config(&new_config).map_err(|error| error.to_string())?;
@@ -69,7 +72,9 @@ fn save_and_apply_config(
             .map_err(|_| "engine state was unavailable".to_string())?;
         engine_state.engine.apply_config(new_config);
     }
-    conceal_settings_window(&app);
+    if hide_window.unwrap_or(true) {
+        conceal_settings_window(&app);
+    }
     Ok(())
 }
 
@@ -166,6 +171,10 @@ fn resize_settings_window(app: AppHandle, content_height: f64) {
     let _ = window.set_max_size(Some(locked_size));
 }
 
+fn process_was_started_as_login_item() -> bool {
+    std::env::args().any(|argument| argument == LAUNCHED_AT_LOGIN_ARGUMENT)
+}
+
 fn reveal_settings_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.unminimize();
@@ -216,7 +225,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
-            None,
+            Some(vec![LAUNCHED_AT_LOGIN_ARGUMENT]),
         ))
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -225,6 +234,7 @@ fn main() {
                 let _ = app.handle().set_dock_visibility(false);
             }
             let config = load_config().unwrap_or_default();
+            apply_launch_at_login(app.handle(), config.launch_at_login);
             let overlay = DictationOverlay::create();
             let tray = build_tray_icon(app)?;
             app.manage(FeedbackState {
@@ -270,6 +280,15 @@ fn main() {
             open_accessibility_settings,
             resize_settings_window
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Rustle");
+        .build(tauri::generate_context!())
+        .expect("error while building Rustle")
+        .run(|app, event| match event {
+            RunEvent::Ready => {
+                if !process_was_started_as_login_item() {
+                    reveal_settings_window(app);
+                }
+            }
+            RunEvent::Reopen { .. } => reveal_settings_window(app),
+            _ => {}
+        });
 }

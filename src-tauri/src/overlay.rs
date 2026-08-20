@@ -51,35 +51,35 @@ impl DictationOverlay {
         match status {
             DictationStatus::Listening => {
                 self.bump_generation();
-                set_tray(tray, None, Some("Rustle · Listening"));
+                set_tray(tray, "", Some("Rustle · Listening"));
                 self.show_message("●  Listening…");
             }
             DictationStatus::Partial(text) => {
                 self.bump_generation();
-                set_tray(tray, None, Some("Rustle · Listening"));
+                set_tray(tray, "", Some("Rustle · Listening"));
                 self.show_message(&format!("●  {text}"));
             }
             DictationStatus::Transcribing => {
                 self.bump_generation();
-                set_tray(tray, None, Some("Rustle · Transcribing"));
+                set_tray(tray, "", Some("Rustle · Transcribing"));
                 self.show_message("●  Transcribing…");
             }
             DictationStatus::Typed(_) => {
-                set_tray(tray, None, Some("Rustle"));
+                set_tray(tray, "", Some("Rustle"));
                 self.hide();
             }
             DictationStatus::Failed(message) => {
-                set_tray(tray, Some("Error"), Some(&format!("Rustle · {message}")));
+                set_tray(tray, "", Some(&format!("Rustle · {message}")));
                 self.show_message(message);
                 self.schedule_hide(app, tray);
             }
             DictationStatus::NeedsPermission(message) => {
-                set_tray(tray, Some("Grant"), Some(&format!("Rustle · {message}")));
+                set_tray(tray, "", Some(&format!("Rustle · {message}")));
                 self.show_message(message);
             }
             DictationStatus::SettingsPreview(_) => {}
             DictationStatus::Idle => {
-                set_tray(tray, None, Some("Rustle"));
+                set_tray(tray, "", Some("Rustle"));
                 self.hide();
             }
         }
@@ -128,7 +128,7 @@ impl DictationOverlay {
                     native.panel.setAlphaValue(0.0);
                     native.panel.orderFront(None);
                 }
-                set_tray(&tray, None, Some("Rustle"));
+                set_tray(&tray, "", Some("Rustle"));
             });
         });
     }
@@ -231,7 +231,7 @@ pub fn run_on_appkit_main(work: impl FnOnce() + Send + 'static) {
     DispatchQueue::main().exec_async(work);
 }
 
-fn set_tray(tray: &TrayIcon, title: Option<&str>, tooltip: Option<&str>) {
-    let _ = tray.set_title(title);
+fn set_tray(tray: &TrayIcon, title: &str, tooltip: Option<&str>) {
+    let _ = tray.set_title(Some(title));
     let _ = tray.set_tooltip(tooltip);
 }

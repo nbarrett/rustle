@@ -24,7 +24,6 @@ type CFNumberRef = *const c_void;
 type CFTypeRef = *const c_void;
 
 const HID_EVENT_TAP: u32 = 0;
-const SESSION_EVENT_TAP: u32 = 1;
 const EVENT_SOURCE_STATE_HID_SYSTEM: i32 = 1;
 const EVENT_SOURCE_STATE_COMBINED_SESSION: i32 = 0;
 const KEYCODE_COMMAND: u16 = 0x37;
@@ -626,7 +625,6 @@ fn create_event_source() -> Result<CGEventSourceRef> {
 
 unsafe fn post_typed_event(event: CGEventRef) {
     CGEventPost(HID_EVENT_TAP, event);
-    CGEventPost(SESSION_EVENT_TAP, event);
 }
 
 unsafe fn post_key(source: CGEventSourceRef, keycode: u16, key_down: bool, flags: u64) {

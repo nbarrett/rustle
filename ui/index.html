@@ -105,10 +105,24 @@
             <span class="field-label">Dictation history</span>
             <button id="clear-history" class="link-button" type="button">Clear</button>
           </div>
+          <p class="field-hint">Double-click a word to set a replacement.</p>
           <div id="history-list" class="history"></div>
         </section>
       </div>
     </main>
+
+    <div id="word-replace" class="word-replace" hidden>
+      <div class="word-replace-card">
+        <p class="word-replace-label">
+          Replace <span id="word-replace-from" class="word-replace-from"></span> with
+        </p>
+        <input id="word-replace-to" type="text" autocomplete="off" />
+        <div class="word-replace-actions">
+          <button id="word-replace-cancel" class="secondary" type="button">Cancel</button>
+          <button id="word-replace-save" class="primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
