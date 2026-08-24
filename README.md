@@ -74,6 +74,8 @@ Use the [download page](https://nbarrett.github.io/rustle/). It offers:
 
 Those files appear on a GitHub release (a version tag, or publish on the workflow). Until that release exists, run from source below.
 
+Installed copies check GitHub for a newer version and offer **Install update** in settings. The first time you still install by hand; after that, the app can replace itself.
+
 A Mac DMG does not have to go in `/Applications`. Open it, put `Rustle.app` in your home folder or Downloads, and open it from there. The lock-down that blocks `/Applications` does not usually block a user folder.
 
 ### The terminal build (no UI)

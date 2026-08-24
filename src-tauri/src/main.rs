@@ -293,6 +293,8 @@ fn main() {
             MacosLauncher::LaunchAgent,
             Some(vec![LAUNCHED_AT_LOGIN_ARGUMENT]),
         ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {

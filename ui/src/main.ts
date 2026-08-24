@@ -1,5 +1,7 @@
 import "../styles.css";
 import {
+  checkForAppUpdate,
+  downloadAndInstallAppUpdate,
   downloadModel,
   getAppVersion,
   getConfig,
@@ -11,10 +13,12 @@ import {
   listenForDictationStatus,
   listenForModelDownloadProgress,
   openAccessibilitySettings,
+  relaunchApp,
   resizeSettingsWindow,
   saveAndApplyConfig,
   setDictationEnabled,
 } from "./commands";
+import type { Update } from "@tauri-apps/plugin-updater";
 import type {
   Config,
   Correction,
@@ -78,6 +82,9 @@ const elements = {
   insertBanner: requiredElement<HTMLDivElement>("insert-banner"),
   insertNote: requiredElement<HTMLParagraphElement>("insert-note"),
   openAccessibility: requiredElement<HTMLButtonElement>("open-accessibility"),
+  updateBanner: requiredElement<HTMLDivElement>("update-banner"),
+  updateNote: requiredElement<HTMLParagraphElement>("update-note"),
+  installUpdate: requiredElement<HTMLButtonElement>("install-update"),
   wordReplace: requiredElement<HTMLDivElement>("word-replace"),
   wordReplaceFrom: requiredElement<HTMLSpanElement>("word-replace-from"),
   wordReplaceTo: requiredElement<HTMLInputElement>("word-replace-to"),
@@ -91,6 +98,7 @@ let corrections: Correction[] = [];
 let modelCatalog: ModelChoice[] = [];
 let wordReplaceEntryIndex: number | null = null;
 let wordReplaceSpoken = "";
+let pendingUpdate: Update | null = null;
 
 function isHistoryEntry(value: unknown): value is HistoryEntry {
   if (typeof value !== "object" || value === null) {
@@ -498,6 +506,43 @@ function applyPlatformCopy(): void {
         : "Open system settings";
 }
 
+async function checkForAvailableUpdate(): Promise<void> {
+  try {
+    pendingUpdate = await checkForAppUpdate();
+  } catch {
+    pendingUpdate = null;
+  }
+  if (!pendingUpdate) {
+    elements.updateBanner.hidden = true;
+    fitWindowToContent();
+    return;
+  }
+  elements.updateNote.textContent = `Version ${pendingUpdate.version} is available.`;
+  elements.installUpdate.hidden = false;
+  elements.installUpdate.disabled = false;
+  elements.installUpdate.textContent = "Install update";
+  elements.updateBanner.hidden = false;
+  fitWindowToContent();
+}
+
+async function installAvailableUpdate(): Promise<void> {
+  if (!pendingUpdate) {
+    return;
+  }
+  elements.installUpdate.disabled = true;
+  elements.installUpdate.textContent = "Installing…";
+  elements.updateNote.textContent = `Downloading ${pendingUpdate.version}…`;
+  try {
+    await downloadAndInstallAppUpdate(pendingUpdate);
+    elements.updateNote.textContent = "Restarting…";
+    await relaunchApp();
+  } catch (error) {
+    elements.updateNote.textContent = `Update failed: ${String(error)}`;
+    elements.installUpdate.disabled = false;
+    elements.installUpdate.textContent = "Install update";
+  }
+}
+
 function fallbackConfig(): Config {
   return {
     hotkey: hotkeyChoices[0]?.value ?? "RightControl",
@@ -571,6 +616,10 @@ async function initialise(): Promise<void> {
   elements.openAccessibility.addEventListener("click", () => {
     void openAccessibilitySettings();
   });
+  elements.installUpdate.addEventListener("click", () => {
+    void installAvailableUpdate();
+  });
+  void checkForAvailableUpdate();
 
   await listenForDictationStatus(applyStatusEvent);
   await listenForModelDownloadProgress((progress) => {

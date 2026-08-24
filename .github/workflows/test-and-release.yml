@@ -11,7 +11,7 @@ on:
         type: boolean
         default: false
       tag:
-        description: Must match package.json as v0.1.1. Leave empty to use package.json.
+        description: Must match package.json as v0.1.2. Leave empty to use package.json.
         type: string
         required: false
 
@@ -167,49 +167,104 @@ jobs:
       - name: Install JS tools
         run: pnpm install --frozen-lockfile
 
+      - name: Require updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [[ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]]; then
+            echo "Set the TAURI_SIGNING_PRIVATE_KEY repository secret."
+            exit 1
+          fi
+
       - name: Build Mac app
         if: matrix.pack == 'macos-aarch64'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: >
           pnpm tauri build --bundles dmg
-          --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
+          --config '{"bundle":{"createUpdaterArtifacts":true,"macOS":{"signingIdentity":"-"}}}'
 
       - name: Build Windows app
         if: matrix.pack == 'windows-x64'
-        run: pnpm tauri build --bundles nsis
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: >
+          pnpm tauri build --bundles nsis
+          --config '{"bundle":{"createUpdaterArtifacts":true}}'
 
       - name: Build Linux apps
         if: matrix.pack == 'linux-x64'
-        run: pnpm tauri build --bundles appimage,deb
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: >
+          pnpm tauri build --bundles appimage,deb
+          --config '{"bundle":{"createUpdaterArtifacts":true}}'
 
       - name: Name release files
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release-assets
+          write_updater_part() {
+            python3 - "$1" "$2" "$3" "$PACKAGE_VERSION" "$RELEASE_TAG" "$GITHUB_REPOSITORY" <<'PY'
+          import json, pathlib, sys
+          platform, asset_name, sig_path, version, tag, repo = sys.argv[1:7]
+          signature = pathlib.Path(sig_path).read_text().strip()
+          part = {
+              "version": version,
+              "platform": platform,
+              "url": f"https://github.com/{repo}/releases/download/{tag}/{asset_name}",
+              "signature": signature,
+          }
+          pathlib.Path("updater-part.json").write_text(json.dumps(part) + "\n")
+          PY
+          }
           case "${{ matrix.pack }}" in
             macos-aarch64)
               dmg="$(find target -name '*.dmg' | head -n 1)"
+              tarball="$(find target -name '*.app.tar.gz' | head -n 1)"
+              sig="$(find target -name '*.app.tar.gz.sig' | head -n 1)"
               cp "${dmg}" release-assets/Rustle-macos-aarch64.dmg
+              cp "${tarball}" release-assets/Rustle-macos-aarch64.app.tar.gz
+              cp "${sig}" release-assets/Rustle-macos-aarch64.app.tar.gz.sig
+              write_updater_part darwin-aarch64 Rustle-macos-aarch64.app.tar.gz "${sig}"
               ;;
             windows-x64)
               installer="$(find target -name '*setup.exe' | head -n 1)"
+              sig="$(find target -name '*setup.exe.sig' | head -n 1)"
               cp "${installer}" release-assets/Rustle-windows-x64-setup.exe
+              cp "${sig}" release-assets/Rustle-windows-x64-setup.exe.sig
+              write_updater_part windows-x86_64 Rustle-windows-x64-setup.exe "${sig}"
               ;;
             linux-x64)
               appimage="$(find target -name '*.AppImage' | head -n 1)"
+              sig="$(find target -name '*.AppImage.sig' | head -n 1)"
               deb="$(find target -name '*.deb' | head -n 1)"
               cp "${appimage}" release-assets/Rustle-linux-x64.AppImage
               chmod +x release-assets/Rustle-linux-x64.AppImage
+              cp "${sig}" release-assets/Rustle-linux-x64.AppImage.sig
               cp "${deb}" release-assets/Rustle-linux-x64.deb
+              write_updater_part linux-x86_64 Rustle-linux-x64.AppImage "${sig}"
               ;;
           esac
           ls -la release-assets
+          cat updater-part.json
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: Rustle-${{ env.RELEASE_TAG }}-${{ matrix.pack }}
           path: release-assets/*
+
+      - name: Upload updater fragment
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-${{ matrix.pack }}
+          path: updater-part.json
 
       - name: Attach files to GitHub release
         env:
@@ -250,6 +305,58 @@ jobs:
             attempt=$((attempt + 1))
             sleep 15
           done
+
+  updater-manifest:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download updater fragments
+        uses: actions/download-artifact@v4
+        with:
+          pattern: updater-*
+          path: updater-parts
+
+      - name: Publish latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          parts = []
+          for path in glob.glob("updater-parts/**/updater-part.json", recursive=True):
+              parts.append(json.loads(Path(path).read_text()))
+          if not parts:
+              raise SystemExit("no updater fragments")
+          platforms = {}
+          version = parts[0]["version"]
+          for part in parts:
+              platforms[part["platform"]] = {
+                  "signature": part["signature"],
+                  "url": part["url"],
+              }
+          needed = {"darwin-aarch64", "windows-x86_64", "linux-x86_64"}
+          missing = needed - set(platforms)
+          if missing:
+              raise SystemExit(f"missing updater platforms: {sorted(missing)}")
+          manifest = {
+              "version": version,
+              "notes": "Rustle update",
+              "pub_date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": platforms,
+          }
+          Path("latest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          print(json.dumps(manifest, indent=2))
+          PY
+          RELEASE_TAG="v$(python3 -c 'import json; print(json.load(open("latest.json"))["version"])')"
+          gh release upload "${RELEASE_TAG}" latest.json --clobber
 
   pages:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

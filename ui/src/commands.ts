@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
+import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import type {
   Config,
   DictationStatusEvent,
@@ -71,4 +73,19 @@ export function listenForModelDownloadProgress(
   return listen<ModelDownloadProgress>("model-download-progress", (event) => {
     onEvent(event.payload);
   });
+}
+
+export function checkForAppUpdate(): Promise<Update | null> {
+  return check();
+}
+
+export function downloadAndInstallAppUpdate(
+  update: Update,
+  onEvent?: (event: DownloadEvent) => void,
+): Promise<void> {
+  return update.downloadAndInstall(onEvent);
+}
+
+export function relaunchApp(): Promise<void> {
+  return relaunch();
 }
