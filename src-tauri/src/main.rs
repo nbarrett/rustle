@@ -244,15 +244,13 @@ fn build_tray_icon(app: &tauri::App) -> Result<TrayIcon, Box<dyn std::error::Err
 
     let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
 
-    let mut tray_builder = TrayIconBuilder::with_id("rustle-tray")
+    let tray_builder = TrayIconBuilder::with_id("rustle-tray")
         .icon(tray_icon)
         .tooltip(&format!("Rustle {}", app.package_info().version))
         .menu(&menu)
         .show_menu_on_left_click(false);
     #[cfg(target_os = "macos")]
-    {
-        tray_builder = tray_builder.icon_as_template(true);
-    }
+    let tray_builder = tray_builder.icon_as_template(true);
     let tray = tray_builder
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => reveal_settings_window(app),
@@ -339,13 +337,16 @@ fn main() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building Rustle")
-        .run(|app, event| match event {
-            RunEvent::Ready => {
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen { .. } = &event {
+                reveal_settings_window(app);
+                return;
+            }
+            if let RunEvent::Ready = event {
                 if !process_was_started_as_login_item() {
                     reveal_settings_window(app);
                 }
             }
-            RunEvent::Reopen { .. } => reveal_settings_window(app),
-            _ => {}
         });
 }
