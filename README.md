@@ -47,7 +47,7 @@ If you keep the default **fn (Globe)** hotkey, also set **System Settings → Ke
 
 ## Setup and run
 
-You do not need to copy anything into `/Applications`. On a locked-down machine, run it from the repo (or unzip the `.app` into your home folder).
+You do not need to copy anything into `/Applications`. On a locked-down machine, run it from the repo (or open the DMG and copy `Rustle.app` into your home folder).
 
 ### From source (npm / npx, no pnpm)
 
@@ -68,13 +68,13 @@ Use the [download page](https://nbarrett.github.io/rustle/). It offers:
 
 | Computer | File |
 |---|---|
-| macOS (Apple Silicon) | `Rustle-macos-aarch64.app.zip` |
+| macOS (Apple Silicon) | `Rustle-macos-aarch64.dmg` |
 | Windows (x64) | `Rustle-windows-x64-setup.exe` |
 | Linux (x64) | `Rustle-linux-x64.AppImage` or `.deb` |
 
 Those files appear on a GitHub release (a version tag, or publish on the workflow). Until that release exists, run from source below.
 
-A Mac zip does not have to go in `/Applications`. Put `Rustle.app` in your home folder or Downloads and open it from there. The lock-down that blocks `/Applications` does not usually block a user folder.
+A Mac DMG does not have to go in `/Applications`. Open it, put `Rustle.app` in your home folder or Downloads, and open it from there. The lock-down that blocks `/Applications` does not usually block a user folder.
 
 ### The terminal build (no UI)
 

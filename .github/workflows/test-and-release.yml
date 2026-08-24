@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -170,7 +170,7 @@ jobs:
       - name: Build Mac app
         if: matrix.pack == 'macos-aarch64'
         run: >
-          pnpm tauri build --bundles app
+          pnpm tauri build --bundles dmg
           --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
 
       - name: Build Windows app
@@ -188,9 +188,8 @@ jobs:
           mkdir -p release-assets
           case "${{ matrix.pack }}" in
             macos-aarch64)
-              ditto -c -k --keepParent \
-                target/release/bundle/macos/Rustle.app \
-                release-assets/Rustle-macos-aarch64.app.zip
+              dmg="$(find target -name '*.dmg' | head -n 1)"
+              cp "${dmg}" release-assets/Rustle-macos-aarch64.dmg
               ;;
             windows-x64)
               installer="$(find target -name '*setup.exe' | head -n 1)"

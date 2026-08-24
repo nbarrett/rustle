@@ -387,7 +387,7 @@ npx tauri dev</pre>
   const REPO = "rustle";
   const RELEASES = `https://github.com/${OWNER}/${REPO}/releases`;
   const FILES = [
-    { id: "macos-aarch64", label: "macOS (Apple Silicon)", match: /macos.*aarch64.*\.zip$/i },
+    { id: "macos-aarch64", label: "macOS (Apple Silicon)", match: /macos.*aarch64.*\.(dmg|zip)$/i },
     { id: "windows-x64", label: "Windows (x64)", match: /windows.*\.(exe|msi)$/i },
     { id: "linux-appimage", label: "Linux AppImage (x64)", match: /\.AppImage$/i },
     { id: "linux-deb", label: "Linux .deb (x64)", match: /\.deb$/i }
@@ -401,7 +401,8 @@ npx tauri dev</pre>
   }
 
   function matchAsset(item, assets) {
-    return assets.find((asset) => item.match.test(asset.name));
+    const hits = assets.filter((asset) => item.match.test(asset.name));
+    return hits.find((asset) => /\.dmg$/i.test(asset.name)) || hits[0];
   }
 
   function render(assets, tag) {
