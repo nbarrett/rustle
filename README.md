@@ -14,6 +14,7 @@ Rustle runs as a **tray / menu-bar app** on macOS, Windows, and Linux, with a sm
 
 - **Pick the push-to-talk key** (Globe on a Mac; Right Control, Right Alt, F8 or F9 elsewhere).
 - **Choose and download Whisper models** (base.en to large-v3) without touching the terminal.
+- **Export and import word corrections and dictation history** as a JSON file, so the same list can be copied to another computer.
 - **Select the microphone** to record from.
 - **Launch Rustle at login**, and watch a live status indicator (Listening / Transcribing / Typed).
 

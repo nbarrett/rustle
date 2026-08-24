@@ -77,8 +77,19 @@
           <div class="field">
             <span class="field-label">Word corrections</span>
             <p class="field-hint">Fix words Whisper mishears: heard on the left, written on the right.</p>
+            <input
+              id="corrections-search"
+              type="search"
+              placeholder="Search corrections"
+              autocomplete="off"
+            />
             <div id="corrections-list" class="corrections-list"></div>
-            <button id="add-correction" class="secondary" type="button">Add correction</button>
+            <div class="inline-row corrections-actions">
+              <button id="add-correction" class="secondary" type="button">Add correction</button>
+              <button id="export-corrections" class="secondary" type="button">Export</button>
+              <button id="import-corrections" class="secondary" type="button">Import</button>
+            </div>
+            <p class="field-hint" id="corrections-file-note"></p>
           </div>
 
           <div class="field">
@@ -120,9 +131,14 @@
         <section class="tab-panel" id="panel-history">
           <div class="block-head">
             <span class="field-label">Dictation history</span>
-            <button id="clear-history" class="link-button" type="button">Clear</button>
+            <div class="inline-row">
+              <button id="export-history" class="link-button" type="button">Export</button>
+              <button id="import-history" class="link-button" type="button">Import</button>
+              <button id="clear-history" class="link-button" type="button">Clear</button>
+            </div>
           </div>
           <p class="field-hint">Double-click a word to set a replacement.</p>
+          <p class="field-hint" id="history-file-note"></p>
           <div id="history-list" class="history"></div>
         </section>
       </div>

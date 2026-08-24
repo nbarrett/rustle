@@ -169,6 +169,16 @@ fn host_platform() -> String {
 }
 
 #[tauri::command]
+fn write_utf8_path(path: String, contents: String) -> Result<(), String> {
+    std::fs::write(path, contents).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn read_utf8_path(path: String) -> Result<String, String> {
+    std::fs::read_to_string(path).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn open_accessibility_settings() {
     #[cfg(target_os = "macos")]
     {
@@ -295,6 +305,7 @@ fn main() {
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -351,7 +362,9 @@ fn main() {
             open_accessibility_settings,
             resize_settings_window,
             list_hotkey_choices,
-            host_platform
+            host_platform,
+            write_utf8_path,
+            read_utf8_path
         ])
         .build(tauri::generate_context!())
         .expect("error while building Rustle")

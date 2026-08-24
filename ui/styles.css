@@ -226,6 +226,10 @@ html[data-os="linux"] select {
   flex: 1;
 }
 
+.corrections-actions {
+  flex-wrap: wrap;
+}
+
 .switch {
   display: flex;
   align-items: center;
@@ -275,10 +279,30 @@ html[data-os="linux"] select {
   color: var(--text-muted);
 }
 
+#corrections-search {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
 .corrections-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 196px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.corrections-empty {
+  padding: 6px 2px;
 }
 
 .correction-row {

@@ -13,11 +13,14 @@ import {
   listenForDictationStatus,
   listenForModelDownloadProgress,
   openAccessibilitySettings,
+  readUtf8Path,
   relaunchApp,
   resizeSettingsWindow,
   saveAndApplyConfig,
   setDictationEnabled,
+  writeUtf8Path,
 } from "./commands";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Update } from "@tauri-apps/plugin-updater";
 import type {
   Config,
@@ -75,7 +78,14 @@ const elements = {
   historyList: requiredElement<HTMLDivElement>("history-list"),
   clearHistory: requiredElement<HTMLButtonElement>("clear-history"),
   correctionsList: requiredElement<HTMLDivElement>("corrections-list"),
+  correctionsSearch: requiredElement<HTMLInputElement>("corrections-search"),
   addCorrection: requiredElement<HTMLButtonElement>("add-correction"),
+  exportCorrections: requiredElement<HTMLButtonElement>("export-corrections"),
+  importCorrections: requiredElement<HTMLButtonElement>("import-corrections"),
+  correctionsFileNote: requiredElement<HTMLParagraphElement>("corrections-file-note"),
+  exportHistory: requiredElement<HTMLButtonElement>("export-history"),
+  importHistory: requiredElement<HTMLButtonElement>("import-history"),
+  historyFileNote: requiredElement<HTMLParagraphElement>("history-file-note"),
   appVersion: requiredElement<HTMLSpanElement>("app-version"),
   saveButton: requiredElement<HTMLButtonElement>("save-button"),
   saveNote: requiredElement<HTMLSpanElement>("save-note"),
@@ -264,9 +274,175 @@ function fitWindowToContent(): void {
   });
 }
 
+function trimmedCorrections(): Correction[] {
+  return corrections
+    .map((rule) => ({ spoken: rule.spoken.trim(), written: rule.written.trim() }))
+    .filter((rule) => rule.spoken !== "");
+}
+
+function isCorrectionRecord(value: unknown): value is Correction {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as { spoken?: unknown; written?: unknown };
+  return typeof record.spoken === "string" && typeof record.written === "string";
+}
+
+function correctionsFromUnknown(value: unknown): Correction[] {
+  if (Array.isArray(value)) {
+    return value.filter(isCorrectionRecord).map((rule) => ({
+      spoken: rule.spoken.trim(),
+      written: rule.written.trim(),
+    }));
+  }
+  if (typeof value === "object" && value !== null) {
+    const record = value as { corrections?: unknown };
+    if (Array.isArray(record.corrections)) {
+      return correctionsFromUnknown(record.corrections);
+    }
+    return [];
+  }
+  throw new Error("file is not a list of word corrections");
+}
+
+function historyFromUnknown(value: unknown): HistoryEntry[] {
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+  const record = value as { history?: unknown };
+  if (!Array.isArray(record.history)) {
+    return [];
+  }
+  return record.history.filter(isHistoryEntry).map((entry) => ({
+    text: entry.text.trim(),
+    time: entry.time,
+  }));
+}
+
+function mergeImportedCorrections(incoming: Correction[]): number {
+  let added = 0;
+  for (const rule of incoming) {
+    if (rule.spoken === "") {
+      continue;
+    }
+    const existing = corrections.find(
+      (current) => current.spoken.toLocaleLowerCase() === rule.spoken.toLocaleLowerCase(),
+    );
+    if (existing) {
+      existing.written = rule.written;
+    } else {
+      corrections.push({ spoken: rule.spoken, written: rule.written });
+      added += 1;
+    }
+  }
+  return added;
+}
+
+function mergeImportedHistory(incoming: HistoryEntry[]): number {
+  const seen = new Set(
+    dictationHistory.map((entry) => `${entry.time}\0${entry.text}`),
+  );
+  const extra: HistoryEntry[] = [];
+  for (const entry of incoming) {
+    if (entry.text === "") {
+      continue;
+    }
+    const key = `${entry.time}\0${entry.text}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    extra.push({ text: entry.text, time: entry.time });
+  }
+  dictationHistory = [...dictationHistory, ...extra].slice(0, HISTORY_LIMIT);
+  saveHistory();
+  return extra.length;
+}
+
+function setWordsFileNote(text: string): void {
+  elements.correctionsFileNote.textContent = text;
+  elements.historyFileNote.textContent = text;
+}
+
+function importedWordsSummary(correctionsAdded: number, historyAdded: number): string {
+  const correctionBit =
+    correctionsAdded === 1 ? "1 correction" : `${correctionsAdded} corrections`;
+  const historyBit =
+    historyAdded === 1 ? "1 history entry" : `${historyAdded} history entries`;
+  return `Imported ${correctionBit} and ${historyBit}.`;
+}
+
+async function exportWordsToFile(): Promise<void> {
+  const path = await save({
+    defaultPath: "rustle-words.json",
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  if (!path) {
+    return;
+  }
+  const body = JSON.stringify(
+    {
+      kind: "rustle-words",
+      version: 1,
+      corrections: trimmedCorrections(),
+      history: dictationHistory.slice(0, HISTORY_LIMIT),
+    },
+    null,
+    2,
+  );
+  await writeUtf8Path(path, `${body}\n`);
+  setWordsFileNote("Exported corrections and history.");
+}
+
+async function importWordsFromFile(): Promise<void> {
+  const chosen = await open({
+    multiple: false,
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  if (!chosen || Array.isArray(chosen)) {
+    return;
+  }
+  const parsed: unknown = JSON.parse(await readUtf8Path(chosen));
+  const incomingCorrections = correctionsFromUnknown(parsed);
+  const incomingHistory = historyFromUnknown(parsed);
+  if (incomingCorrections.length === 0 && incomingHistory.length === 0) {
+    throw new Error("file has no corrections or history");
+  }
+  const correctionsAdded = mergeImportedCorrections(incomingCorrections);
+  const historyAdded = mergeImportedHistory(incomingHistory);
+  renderCorrections();
+  renderHistory();
+  await persistCorrections();
+  setWordsFileNote(importedWordsSummary(correctionsAdded, historyAdded));
+}
+
+function correctionMatchesSearch(rule: Correction, query: string): boolean {
+  if (query === "") {
+    return true;
+  }
+  const spoken = rule.spoken.toLocaleLowerCase();
+  const written = rule.written.toLocaleLowerCase();
+  return spoken.includes(query) || written.includes(query);
+}
+
+function visibleCorrections(): Correction[] {
+  const query = elements.correctionsSearch.value.trim().toLocaleLowerCase();
+  return corrections.filter((rule) => correctionMatchesSearch(rule, query));
+}
+
 function renderCorrections(): void {
+  const query = elements.correctionsSearch.value.trim();
+  const visible = visibleCorrections();
   elements.correctionsList.replaceChildren();
-  corrections.forEach((rule, index) => {
+  if (visible.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "field-hint corrections-empty";
+    empty.textContent = query === "" ? "No corrections yet." : "No corrections match.";
+    elements.correctionsList.appendChild(empty);
+    fitWindowToContent();
+    return;
+  }
+  for (const rule of visible) {
     const row = document.createElement("div");
     row.className = "correction-row";
 
@@ -276,9 +452,8 @@ function renderCorrections(): void {
     spoken.value = rule.spoken;
     spoken.addEventListener("input", (event) => {
       const target = event.target;
-      const current = corrections[index];
-      if (target instanceof HTMLInputElement && current) {
-        current.spoken = target.value;
+      if (target instanceof HTMLInputElement) {
+        rule.spoken = target.value;
       }
     });
 
@@ -292,9 +467,8 @@ function renderCorrections(): void {
     written.value = rule.written;
     written.addEventListener("input", (event) => {
       const target = event.target;
-      const current = corrections[index];
-      if (target instanceof HTMLInputElement && current) {
-        current.written = target.value;
+      if (target instanceof HTMLInputElement) {
+        rule.written = target.value;
       }
     });
 
@@ -303,13 +477,16 @@ function renderCorrections(): void {
     remove.type = "button";
     remove.textContent = "✕";
     remove.addEventListener("click", () => {
-      corrections.splice(index, 1);
+      const index = corrections.indexOf(rule);
+      if (index >= 0) {
+        corrections.splice(index, 1);
+      }
       renderCorrections();
     });
 
     row.append(spoken, arrow, written, remove);
     elements.correctionsList.appendChild(row);
-  });
+  }
   fitWindowToContent();
 }
 
@@ -589,10 +766,35 @@ async function initialise(): Promise<void> {
     written: rule.written,
   }));
   renderCorrections();
-  elements.addCorrection.addEventListener("click", () => {
-    corrections.push({ spoken: "", written: "" });
+  elements.correctionsSearch.addEventListener("input", () => {
     renderCorrections();
   });
+  elements.addCorrection.addEventListener("click", () => {
+    elements.correctionsSearch.value = "";
+    corrections.push({ spoken: "", written: "" });
+    renderCorrections();
+    const spokenField = elements.correctionsList.querySelector(
+      ".correction-row:last-child input",
+    );
+    if (spokenField instanceof HTMLInputElement) {
+      spokenField.focus();
+      spokenField.scrollIntoView({ block: "nearest" });
+    }
+  });
+  const exportWords = () => {
+    void exportWordsToFile().catch((error) => {
+      setWordsFileNote(`Could not export: ${String(error)}`);
+    });
+  };
+  const importWords = () => {
+    void importWordsFromFile().catch((error) => {
+      setWordsFileNote(`Could not import: ${String(error)}`);
+    });
+  };
+  elements.exportCorrections.addEventListener("click", exportWords);
+  elements.importCorrections.addEventListener("click", importWords);
+  elements.exportHistory.addEventListener("click", exportWords);
+  elements.importHistory.addEventListener("click", importWords);
 
   const enabled = await getDictationEnabled().catch(() => true);
   elements.dictationToggle.checked = enabled;

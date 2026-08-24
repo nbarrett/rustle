@@ -11,7 +11,7 @@ on:
         type: boolean
         default: false
       tag:
-        description: Must match package.json as v0.1.2. Leave empty to use package.json.
+        description: Must match package.json as v0.1.3. Leave empty to use package.json.
         type: string
         required: false
 

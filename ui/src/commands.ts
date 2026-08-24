@@ -89,3 +89,11 @@ export function downloadAndInstallAppUpdate(
 export function relaunchApp(): Promise<void> {
   return relaunch();
 }
+
+export function writeUtf8Path(path: string, contents: string): Promise<void> {
+  return invoke("write_utf8_path", { path, contents });
+}
+
+export function readUtf8Path(path: string): Promise<string> {
+  return invoke("read_utf8_path", { path });
+}
