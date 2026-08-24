@@ -4,6 +4,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import type {
   Config,
   DictationStatusEvent,
+  HotkeyOption,
   ModelChoice,
   ModelDownloadProgress,
 } from "./types";
@@ -26,6 +27,14 @@ export function listMicrophones(): Promise<string[]> {
 
 export function listModels(): Promise<ModelChoice[]> {
   return invoke("list_models");
+}
+
+export function listHotkeyChoices(): Promise<HotkeyOption[]> {
+  return invoke("list_hotkey_choices");
+}
+
+export function hostPlatform(): Promise<string> {
+  return invoke("host_platform");
 }
 
 export function setDictationEnabled(enabled: boolean): Promise<void> {

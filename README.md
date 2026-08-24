@@ -2,33 +2,37 @@
 
 Open-source, local, **Rust** dictation. A Wispr Flow replacement you own.
 
+**[Download for your computer](https://nbarrett.github.io/rustle/)** — macOS, Windows, or Linux. The page picks the file that matches the machine you are on.
+
 Your voice is transcribed by Whisper **on your own machine** and never leaves it, so it is private, free, and impossible to rate-limit. The experience is the Wispr Flow one: hold a hotkey, talk, and the text appears in whatever app you are using.
 
 > Working codename. Rename freely.
 
-## Status: menu-bar app with a settings panel
+## Status: tray app with a settings panel
 
-Rustle now runs as a macOS **menu-bar app** (a 🎙 icon, no Dock clutter) with a small settings panel. From there you can:
+Rustle runs as a **tray / menu-bar app** on macOS, Windows, and Linux, with a small settings panel. From there you can:
 
-- **Pick the push-to-talk key** (default is the fn / Globe key).
+- **Pick the push-to-talk key** (Globe on a Mac; Right Control, Right Alt, F8 or F9 elsewhere).
 - **Choose and download Whisper models** (base.en to large-v3) without touching the terminal.
 - **Select the microphone** to record from.
 - **Launch Rustle at login**, and watch a live status indicator (Listening / Transcribing / Typed).
 
-The dictation itself is unchanged and works in every application, because it operates at the operating-system level, not per-app:
-
 **hold the hotkey → talk → release → Whisper transcribes on-device → the text is typed into the focused app.**
 
-## Prerequisites (macOS)
+On a Mac, live words can appear as you speak. On Windows and Linux, the grey HUD still updates live, then the finished transcript is pasted on release (Ctrl+V). Linux paste needs `xdotool` (X11), `wtype`, or `ydotool`. Wayland global hotkeys are limited; X11 is the path that actually works today.
+
+## Prerequisites
 
 - **Rust** via [rustup](https://rustup.rs)
-- **Xcode command line tools:** `xcode-select --install`
-- **cmake:** `brew install cmake` (whisper-rs compiles whisper.cpp under the hood)
-- **Node.js** and **[pnpm](https://pnpm.io)** for the Tauri CLI that runs and builds the app (`pnpm install` in the repo installs the CLI locally)
+- **cmake** (whisper-rs compiles whisper.cpp)
+- **Node.js** (npm / npx is enough; a global pnpm is not required)
+- **macOS:** Xcode command line tools (`xcode-select --install`)
+- **Windows:** Visual Studio C++ build tools
+- **Linux:** a C compiler, ALSA/PipeWire headers, and WebKitGTK for the Tauri UI (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libasound2-dev`, `libx11-dev`, `libxtst-dev`)
 
 ## Permissions (one time)
 
-Because it listens for a global hotkey and types into other apps, macOS will ask you to grant, under **System Settings → Privacy & Security**:
+**macOS** — System Settings → Privacy & Security:
 
 - **Accessibility** - to type into the focused app
 - **Input Monitoring** - to hear the global hotkey
@@ -37,19 +41,40 @@ Grant these to whatever launches Rustle: your terminal while developing, or the 
 
 If you keep the default **fn (Globe)** hotkey, also set **System Settings → Keyboard → "Press 🌐 key to: Do Nothing"**, otherwise macOS grabs fn for its own dictation or emoji picker.
 
+**Windows** — allow the microphone when asked. A low-level keyboard hook does not need a special settings pane.
+
+**Linux** — allow the microphone. Global keys and paste work most reliably on X11. On Wayland you may need to be in the `input` group, and you still need `xdotool`, `wtype`, or `ydotool` to paste.
+
 ## Setup and run
 
-### The menu-bar app
+You do not need to copy anything into `/Applications`. On a locked-down machine, run it from the repo (or unzip the `.app` into your home folder).
+
+### From source (npm / npx, no pnpm)
+
+Needs Rust and cmake as well as Node. Packages stay inside this project; nothing is installed globally.
 
 ```bash
-# 1. Install the Tauri CLI locally
 npm install
-
-# 2. Run the app (a 🎙 icon appears in the menu bar)
-npm run tauri dev
+npx tauri dev
 ```
 
-Click the menu-bar icon (or its menu → **Open Rustle Settings**) to open the panel. Download a model from there if you have not already (base.en is the quick start), pick your hotkey and microphone, and hold the hotkey in any text field.
+`npm start` does the same. A tray icon appears. Click it (or **Open Rustle Settings**) to open the panel. Download a model if you have not already (base.en is the quick start), pick your hotkey and microphone, and hold the hotkey in any text field.
+
+On macOS, grant Accessibility and Input Monitoring to the process that launched it (often Terminal, or the `rustle-app` binary under `target/`). Quit and reopen after granting.
+
+### Prebuilt apps (Mac, Windows, Linux)
+
+Use the [download page](https://nbarrett.github.io/rustle/). It offers:
+
+| Computer | File |
+|---|---|
+| macOS (Apple Silicon) | `Rustle-macos-aarch64.app.zip` |
+| Windows (x64) | `Rustle-windows-x64-setup.exe` |
+| Linux (x64) | `Rustle-linux-x64.AppImage` or `.deb` |
+
+Those files appear on a GitHub release (a version tag, or publish on the workflow). Until that release exists, run from source below.
+
+A Mac zip does not have to go in `/Applications`. Put `Rustle.app` in your home folder or Downloads and open it from there. The lock-down that blocks `/Applications` does not usually block a user folder.
 
 ### The terminal build (no UI)
 
@@ -63,7 +88,7 @@ It reads the same saved settings and prints what it hears.
 
 ### Where things live
 
-Config and downloaded models are stored under `~/Library/Application Support/rustle/`. The bundled `download-model.sh` still works too, and drops models into a local `models/` folder that the terminal build will also find.
+Config and downloaded models are stored under the OS app-data folder: `~/Library/Application Support/rustle/` on a Mac, `%APPDATA%\rustle` on Windows, `~/.config/rustle` on Linux. The bundled `download-model.sh` still works too, and drops models into a local `models/` folder that the terminal build will also find.
 
 ## Project layout
 

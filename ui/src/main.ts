@@ -4,6 +4,8 @@ import {
   getAppVersion,
   getConfig,
   getDictationEnabled,
+  hostPlatform,
+  listHotkeyChoices,
   listMicrophones,
   listModels,
   listenForDictationStatus,
@@ -22,13 +24,14 @@ import type {
   ModelChoice,
 } from "./types";
 
-const HOTKEY_CHOICES: readonly HotkeyOption[] = [
+let hotkeyChoices: HotkeyOption[] = [
   { value: "Function", label: "🌐 Globe (fn)" },
   { value: "RightOption", label: "Right Option" },
   { value: "RightControl", label: "Right Control" },
   { value: "F8", label: "F8" },
   { value: "F9", label: "F9" },
 ];
+let platformName = "macos";
 
 const HISTORY_STORAGE_KEY = "rustle-history";
 const HISTORY_LIMIT = 200;
@@ -52,6 +55,7 @@ const elements = {
   modelDownload: requiredElement<HTMLButtonElement>("model-download"),
   downloadStatus: requiredElement<HTMLParagraphElement>("download-status"),
   enterToggle: requiredElement<HTMLInputElement>("enter-toggle"),
+  enterCaption: requiredElement<HTMLSpanElement>("enter-caption"),
   launchToggle: requiredElement<HTMLInputElement>("launch-toggle"),
   liveTranscript: requiredElement<HTMLTextAreaElement>("live-transcript"),
   historyList: requiredElement<HTMLDivElement>("history-list"),
@@ -292,16 +296,19 @@ function renderCorrections(): void {
 }
 
 function isHotkeyChoice(value: string): value is HotkeyChoice {
-  return HOTKEY_CHOICES.some((choice) => choice.value === value);
+  return hotkeyChoices.some((choice) => choice.value === value);
 }
 
 function populateHotkeys(selectedValue: HotkeyChoice): void {
+  const selected = isHotkeyChoice(selectedValue)
+    ? selectedValue
+    : (hotkeyChoices[0]?.value ?? "RightControl");
   elements.hotkeySelect.replaceChildren();
-  for (const choice of HOTKEY_CHOICES) {
+  for (const choice of hotkeyChoices) {
     const option = document.createElement("option");
     option.value = choice.value;
     option.textContent = choice.label;
-    option.selected = choice.value === selectedValue;
+    option.selected = choice.value === selected;
     elements.hotkeySelect.appendChild(option);
   }
 }
@@ -467,7 +474,23 @@ function setUpTabs(): void {
   });
 }
 
+function applyPlatformCopy(): void {
+  elements.enterCaption.textContent =
+    platformName === "macos"
+      ? "Press Return when you release the key"
+      : "Press Enter when you release the key";
+  elements.openAccessibility.textContent =
+    platformName === "macos"
+      ? "Open Accessibility settings"
+      : platformName === "windows"
+        ? "Open microphone settings"
+        : "Open system settings";
+}
+
 async function initialise(): Promise<void> {
+  platformName = await hostPlatform().catch(() => "macos");
+  hotkeyChoices = await listHotkeyChoices().catch(() => hotkeyChoices);
+  applyPlatformCopy();
   const config = await getConfig();
   selectedModelFileName = config.model_file_name;
   try {

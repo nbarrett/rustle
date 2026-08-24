@@ -3,19 +3,26 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use objc2::rc::Retained;
-use objc2::{MainThreadMarker, MainThreadOnly};
+#[cfg(target_os = "macos")]
 use dispatch2::DispatchQueue;
+#[cfg(target_os = "macos")]
+use objc2::rc::Retained;
+#[cfg(target_os = "macos")]
+use objc2::{MainThreadMarker, MainThreadOnly};
+#[cfg(target_os = "macos")]
 use objc2_app_kit::{
     NSBackingStoreType, NSColor, NSFont, NSLineBreakMode, NSPanel, NSPopUpMenuWindowLevel, NSScreen,
     NSTextAlignment, NSTextField, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
     NSVisualEffectState, NSVisualEffectView, NSWindowAnimationBehavior, NSWindowCollectionBehavior,
     NSWindowStyleMask,
 };
+#[cfg(target_os = "macos")]
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use rustle_core::engine::DictationStatus;
 use tauri::tray::TrayIcon;
 use tauri::AppHandle;
+#[cfg(not(target_os = "macos"))]
+use tauri::Manager;
 
 const OVERLAY_HORIZONTAL_PADDING: f64 = 22.0;
 const OVERLAY_VERTICAL_PADDING: f64 = 14.0;
@@ -24,15 +31,19 @@ const OVERLAY_MIN_WIDTH: f64 = 220.0;
 const OVERLAY_BOTTOM_MARGIN: f64 = 80.0;
 const OVERLAY_HIDE_DELAY: Duration = Duration::from_millis(1400);
 
+#[cfg(target_os = "macos")]
 struct NativeOverlay {
     panel: Retained<NSPanel>,
     field: Retained<NSTextField>,
 }
 
+#[cfg(target_os = "macos")]
 unsafe impl Send for NativeOverlay {}
+#[cfg(target_os = "macos")]
 unsafe impl Sync for NativeOverlay {}
 
 pub struct DictationOverlay {
+    #[cfg(target_os = "macos")]
     native: Option<Arc<NativeOverlay>>,
     generation: Arc<AtomicU64>,
 }
@@ -40,9 +51,11 @@ pub struct DictationOverlay {
 impl DictationOverlay {
     pub fn create() -> Self {
         let overlay = Self {
+            #[cfg(target_os = "macos")]
             native: NativeOverlay::try_create().map(Arc::new),
             generation: Arc::new(AtomicU64::new(0)),
         };
+        #[cfg(target_os = "macos")]
         overlay.keep_panel_alive();
         overlay
     }
@@ -52,52 +65,69 @@ impl DictationOverlay {
             DictationStatus::Listening => {
                 self.bump_generation();
                 set_tray(tray, "", Some("Rustle · Listening"));
-                self.show_message("●  Listening…");
+                self.show_message(app, "●  Listening…");
             }
             DictationStatus::Partial(text) => {
                 self.bump_generation();
                 set_tray(tray, "", Some("Rustle · Listening"));
-                self.show_message(&format!("●  {text}"));
+                self.show_message(app, &format!("●  {text}"));
             }
             DictationStatus::Transcribing => {
                 self.bump_generation();
                 set_tray(tray, "", Some("Rustle · Transcribing"));
-                self.show_message("●  Transcribing…");
+                self.show_message(app, "●  Transcribing…");
             }
             DictationStatus::Typed(_) => {
                 set_tray(tray, "", Some("Rustle"));
-                self.hide();
+                self.hide(app);
             }
             DictationStatus::Failed(message) => {
                 set_tray(tray, "", Some(&format!("Rustle · {message}")));
-                self.show_message(message);
+                self.show_message(app, message);
                 self.schedule_hide(app, tray);
             }
             DictationStatus::NeedsPermission(message) => {
                 set_tray(tray, "", Some(&format!("Rustle · {message}")));
-                self.show_message(message);
+                self.show_message(app, message);
             }
             DictationStatus::SettingsPreview(_) => {}
             DictationStatus::Idle => {
                 set_tray(tray, "", Some("Rustle"));
-                self.hide();
+                self.hide(app);
             }
         }
     }
 
-    fn show_message(&self, text: &str) {
-        let Some(native) = self.native.as_ref() else {
-            return;
-        };
-        native.set_text(text);
-        native.panel.setAlphaValue(1.0);
-        native.panel.orderFront(None);
+    fn show_message(&self, app: &AppHandle, text: &str) {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = app;
+            let Some(native) = self.native.as_ref() else {
+                return;
+            };
+            native.set_text(text);
+            native.panel.setAlphaValue(1.0);
+            native.panel.orderFront(None);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            show_hud(app, text);
+        }
     }
 
-    fn hide(&self) {
-        self.keep_panel_alive();
+    fn hide(&self, app: &AppHandle) {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = app;
+            self.keep_panel_alive();
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            hide_hud(app);
+        }
     }
 
+    #[cfg(target_os = "macos")]
     fn keep_panel_alive(&self) {
         let Some(native) = self.native.as_ref() else {
             return;
@@ -110,30 +140,38 @@ impl DictationOverlay {
         self.generation.fetch_add(1, Ordering::SeqCst);
     }
 
-    fn schedule_hide(&self, _app: &AppHandle, tray: &TrayIcon) {
+    fn schedule_hide(&self, app: &AppHandle, tray: &TrayIcon) {
         let token = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let generation = self.generation.clone();
-        let native = self.native.clone();
         let tray = tray.clone();
+        let app = app.clone();
+        #[cfg(not(target_os = "macos"))]
+        let ui_app = app.clone();
+        #[cfg(target_os = "macos")]
+        let native = self.native.clone();
         thread::spawn(move || {
             thread::sleep(OVERLAY_HIDE_DELAY);
             if generation.load(Ordering::SeqCst) != token {
                 return;
             }
-            run_on_appkit_main(move || {
+            let _ = app.run_on_main_thread(move || {
                 if generation.load(Ordering::SeqCst) != token {
                     return;
                 }
+                #[cfg(target_os = "macos")]
                 if let Some(native) = native.as_ref() {
                     native.panel.setAlphaValue(0.0);
                     native.panel.orderFront(None);
                 }
+                #[cfg(not(target_os = "macos"))]
+                hide_hud(&ui_app);
                 set_tray(&tray, "", Some("Rustle"));
             });
         });
     }
 }
 
+#[cfg(target_os = "macos")]
 impl NativeOverlay {
     fn try_create() -> Option<Self> {
         let mtm = MainThreadMarker::new()?;
@@ -227,8 +265,50 @@ impl NativeOverlay {
     }
 }
 
-pub fn run_on_appkit_main(work: impl FnOnce() + Send + 'static) {
-    DispatchQueue::main().exec_async(work);
+#[cfg(not(target_os = "macos"))]
+fn show_hud(app: &AppHandle, text: &str) {
+    let Some(hud) = app.get_webview_window("hud") else {
+        return;
+    };
+    let encoded = serde_json::to_string(text).unwrap_or_else(|_| "\"\"".to_string());
+    let _ = hud.eval(&format!(
+        "var n=document.getElementById('msg'); if(n) n.textContent={encoded};"
+    ));
+    position_hud(&hud);
+    let _ = hud.show();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn hide_hud(app: &AppHandle) {
+    if let Some(hud) = app.get_webview_window("hud") {
+        let _ = hud.hide();
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn position_hud(hud: &tauri::WebviewWindow) {
+    let Ok(Some(monitor)) = hud.primary_monitor() else {
+        return;
+    };
+    let work = monitor.work_area();
+    let Ok(size) = hud.outer_size() else {
+        return;
+    };
+    let x = work.position.x + ((work.size.width as i32 - size.width as i32) / 2);
+    let y = work.position.y + work.size.height as i32 - size.height as i32 - 80;
+    let _ = hud.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+pub fn run_on_ui_thread(app: &AppHandle, work: impl FnOnce() + Send + 'static) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        DispatchQueue::main().exec_async(work);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app.run_on_main_thread(work);
+    }
 }
 
 fn set_tray(tray: &TrayIcon, title: &str, tooltip: Option<&str>) {

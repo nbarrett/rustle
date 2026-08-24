@@ -7,6 +7,7 @@ use rustle_core::audio::list_input_device_names;
 use rustle_core::config::{load_config, model_catalog, save_config, Config, ModelChoice};
 use rustle_core::download::download_model_file;
 use rustle_core::engine::{DictationEngine, DictationStatus};
+use rustle_core::hotkey::{HotkeyChoice, HotkeyOption};
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -139,13 +140,41 @@ fn show_settings_window(app: AppHandle) {
 }
 
 #[tauri::command]
+fn list_hotkey_choices() -> Vec<HotkeyOption> {
+    HotkeyChoice::available()
+        .into_iter()
+        .map(HotkeyChoice::option)
+        .collect()
+}
+
+#[tauri::command]
+fn host_platform() -> String {
+    std::env::consts::OS.to_string()
+}
+
+#[tauri::command]
 fn open_accessibility_settings() {
-    let _ = std::process::Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")
-        .status();
-    let _ = std::process::Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-        .status();
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")
+            .status();
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .status();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "ms-settings:privacy-microphone"])
+            .status();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open")
+            .arg("settings://")
+            .status();
+    }
 }
 
 #[tauri::command]
@@ -175,6 +204,25 @@ fn process_was_started_as_login_item() -> bool {
     std::env::args().any(|argument| argument == LAUNCHED_AT_LOGIN_ARGUMENT)
 }
 
+#[cfg(not(target_os = "macos"))]
+fn create_hud_window(app: &mut tauri::App) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    let _ = WebviewWindowBuilder::new(app, "hud", WebviewUrl::App("hud.html".into()))
+        .title("")
+        .inner_size(520.0, 72.0)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(false)
+        .focused(false)
+        .resizable(false)
+        .build();
+    if let Some(hud) = app.handle().get_webview_window("hud") {
+        let _ = hud.set_ignore_cursor_events(true);
+    }
+}
+
 fn reveal_settings_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.unminimize();
@@ -196,12 +244,16 @@ fn build_tray_icon(app: &tauri::App) -> Result<TrayIcon, Box<dyn std::error::Err
 
     let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
 
-    let tray = TrayIconBuilder::with_id("rustle-tray")
+    let mut tray_builder = TrayIconBuilder::with_id("rustle-tray")
         .icon(tray_icon)
-        .icon_as_template(true)
         .tooltip(&format!("Rustle {}", app.package_info().version))
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(false);
+    #[cfg(target_os = "macos")]
+    {
+        tray_builder = tray_builder.icon_as_template(true);
+    }
+    let tray = tray_builder
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => reveal_settings_window(app),
             "quit" => app.exit(0),
@@ -235,6 +287,8 @@ fn main() {
             }
             let config = load_config().unwrap_or_default();
             apply_launch_at_login(app.handle(), config.launch_at_login);
+            #[cfg(not(target_os = "macos"))]
+            create_hud_window(app);
             let overlay = DictationOverlay::create();
             let tray = build_tray_icon(app)?;
             app.manage(FeedbackState {
@@ -247,10 +301,11 @@ fn main() {
                 eprintln!("[rustle] {status:?}");
                 let _ = status_app.emit("dictation-status", describe_status(&status));
                 let app = status_app.clone();
+                let ui_app = app.clone();
                 let status = status.clone();
-                overlay::run_on_appkit_main(move || {
-                    if let Some(feedback) = app.try_state::<FeedbackState>() {
-                        feedback.overlay.apply(&app, &feedback.tray, &status);
+                overlay::run_on_ui_thread(&app, move || {
+                    if let Some(feedback) = ui_app.try_state::<FeedbackState>() {
+                        feedback.overlay.apply(&ui_app, &feedback.tray, &status);
                     }
                 });
             })
@@ -278,7 +333,9 @@ fn main() {
             download_model,
             show_settings_window,
             open_accessibility_settings,
-            resize_settings_window
+            resize_settings_window,
+            list_hotkey_choices,
+            host_platform
         ])
         .build(tauri::generate_context!())
         .expect("error while building Rustle")

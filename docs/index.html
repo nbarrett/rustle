@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Download Rustle</title>
+    <style>
+      :root {
+        --background: #f6f6f7;
+        --surface: #ffffff;
+        --border: #e2e2e6;
+        --text: #17171a;
+        --text-muted: #6b6b74;
+        --accent: #0f766e;
+        --accent-text: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: #17171a;
+          --surface: #202024;
+          --border: #33333a;
+          --text: #f2f2f4;
+          --text-muted: #a0a0aa;
+          --accent: #2dd4bf;
+          --accent-text: #062925;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font: 16px/1.5 system-ui, sans-serif;
+        color: var(--text);
+        background: var(--background);
+      }
+      main {
+        max-width: 40rem;
+        margin: 0 auto;
+        padding: 4rem 1.5rem 6rem;
+      }
+      h1 {
+        font-size: 2rem;
+        letter-spacing: -0.03em;
+        margin: 0 0 0.4rem;
+      }
+      .lede {
+        color: var(--text-muted);
+        margin: 0 0 2rem;
+      }
+      .primary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 2.75rem;
+        padding: 0 1.25rem;
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: var(--accent-text);
+        font: inherit;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .primary[hidden], .missing[hidden] { display: none; }
+      .primary:hover { filter: brightness(1.05); }
+      .detected {
+        margin: 0 0 0.75rem;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+      }
+      .missing {
+        margin: 1rem 0 0;
+        padding: 0.9rem 1rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text-muted);
+      }
+      h2 {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        margin: 2.5rem 0 0.75rem;
+      }
+      .platforms {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+        overflow: hidden;
+      }
+      .platforms li {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+        padding: 0.85rem 1rem;
+        border-top: 1px solid var(--border);
+      }
+      .platforms li:first-child { border-top: 0; }
+      .platforms a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .platforms a[aria-disabled="true"] {
+        color: var(--text-muted);
+        font-weight: 400;
+        pointer-events: none;
+      }
+      .note {
+        margin: 2rem 0 0;
+        color: var(--text-muted);
+        font-size: 0.92rem;
+      }
+      .note a { color: var(--accent); }
+      code {
+        font-size: 0.85em;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.1em 0.35em;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Download Rustle</h1>
+      <p class="lede">
+        Local dictation. Hold a key, talk, and the words appear in the app you were using.
+        Nothing is sent to a server.
+      </p>
+      <p class="detected" id="detected"></p>
+      <a class="primary" id="primary" href="https://github.com/nbarrett/rustle/releases/latest">Download</a>
+      <p class="missing" id="missing" hidden>
+        A build for this computer is not on the latest release yet. Use another file below, or run it from source.
+      </p>
+
+      <h2>All platforms</h2>
+      <ul class="platforms" id="platforms"></ul>
+
+      <p class="note">
+        macOS builds are not from the App Store: right-click the app, choose Open.
+        Windows may warn about an unsigned installer. Linux paste needs
+        <code>xdotool</code>, <code>wtype</code>, or <code>ydotool</code>.
+        Locked-down machines can unzip into a home folder, or run from source with
+        <code>npm install</code> then <code>npx tauri dev</code>.
+        Source and older versions are on
+        <a href="https://github.com/nbarrett/rustle">GitHub</a>.
+      </p>
+    </main>
+    <script>
+      const OWNER = "nbarrett";
+      const REPO = "rustle";
+      const LATEST = `https://github.com/${OWNER}/${REPO}/releases/latest/download`;
+      const FILES = [
+        { id: "macos-aarch64", label: "macOS (Apple Silicon)", file: "Rustle-macos-aarch64.app.zip" },
+        { id: "windows-x64", label: "Windows (x64)", file: "Rustle-windows-x64-setup.exe" },
+        { id: "linux-appimage", label: "Linux AppImage (x64)", file: "Rustle-linux-x64.AppImage" },
+        { id: "linux-deb", label: "Linux .deb (x64)", file: "Rustle-linux-x64.deb" },
+      ];
+
+      function guessedPlatform() {
+        const ua = navigator.userAgent;
+        if (/Windows/i.test(ua)) return "windows-x64";
+        if (/Linux/i.test(ua) && !/Android/i.test(ua)) return "linux-appimage";
+        return "macos-aarch64";
+      }
+
+      function fileUrl(fileName, assets) {
+        const match = assets.find((asset) => asset.name === fileName);
+        if (match) return match.browser_download_url;
+        return `${LATEST}/${fileName}`;
+      }
+
+      function render(assets) {
+        const names = new Set(assets.map((asset) => asset.name));
+        const platform = guessedPlatform();
+        const preferred =
+          FILES.find((item) => item.id === platform && names.has(item.file)) ||
+          FILES.find((item) => item.id === platform);
+        const present = preferred && (names.size === 0 || names.has(preferred.file));
+        document.getElementById("detected").textContent = present
+          ? `This computer looks like ${preferred.label}.`
+          : `This computer looks like ${preferred.label}, but that file is not in the latest release.`;
+        const primary = document.getElementById("primary");
+        primary.href = fileUrl(preferred.file, assets);
+        primary.textContent = `Download for ${preferred.label}`;
+        document.getElementById("missing").hidden = names.size === 0 || names.has(preferred.file);
+
+        const list = document.getElementById("platforms");
+        list.replaceChildren();
+        for (const item of FILES) {
+          const row = document.createElement("li");
+          const name = document.createElement("span");
+          name.textContent = item.label;
+          const link = document.createElement("a");
+          const available = names.size === 0 || names.has(item.file);
+          link.textContent = available ? "Download" : "Not on this release";
+          link.href = fileUrl(item.file, assets);
+          if (!available) link.setAttribute("aria-disabled", "true");
+          row.append(name, link);
+          list.appendChild(row);
+        }
+      }
+
+      render([]);
+      fetch(`https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`)
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((release) => render(release.assets || []))
+        .catch(() => {});
+    </script>
+  </body>
+</html>

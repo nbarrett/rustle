@@ -4,9 +4,9 @@
   "version": "0.1.1",
   "identifier": "com.annix.rustle",
   "build": {
-    "beforeDevCommand": "pnpm exec vite",
+    "beforeDevCommand": "npx vite",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm typecheck && pnpm exec vite build",
+    "beforeBuildCommand": "npx tsc --noEmit && npx vite build",
     "frontendDist": "../dist"
   },
   "app": {

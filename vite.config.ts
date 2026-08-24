@@ -13,5 +13,11 @@ export default defineConfig({
     emptyOutDir: true,
     target: "es2022",
     reportCompressedSize: false,
+    rollupOptions: {
+      input: {
+        index: "index.html",
+        hud: "hud.html",
+      },
+    },
   },
 });

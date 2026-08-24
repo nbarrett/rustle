@@ -36,12 +36,7 @@ extern "C" {
     ) -> i32;
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum SilencedOutput {
-    AlreadySilent,
-    Muted,
-    VolumeLowered { previous: f32 },
-}
+pub use crate::output::SilencedOutput;
 
 fn default_output_device() -> Option<u32> {
     let address = AudioObjectPropertyAddress {

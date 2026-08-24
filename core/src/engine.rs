@@ -8,6 +8,7 @@ use std::time::Duration;
 const LIVE_TRANSCRIPTION_INTERVAL: Duration = Duration::from_millis(450);
 const LIVE_TRANSCRIPT_MINIMUM_SECONDS: f32 = 0.35;
 const CLIPBOARD_SETTLE: Duration = Duration::from_millis(50);
+const CLIPBOARD_RESTORE_AFTER_PASTE: Duration = Duration::from_millis(800);
 
 use crate::audio::{
     downmix_to_mono, resample_linear, start_recording, stop_recording, ActiveRecording,
@@ -92,8 +93,9 @@ fn spawn_hotkey_listener(
     report_status: Arc<dyn Fn(DictationStatus) + Send + Sync>,
     sender: Sender<ControllerCommand>,
 ) {
+    use crate::hotkey::HotkeyEdge;
     use crate::mac_hotkey::{
-        listen_event_access_is_granted, request_listen_event_access, run_hotkey_tap, HotkeyEdge,
+        listen_event_access_is_granted, request_listen_event_access, run_hotkey_tap,
     };
     thread::spawn(move || {
         if !listen_event_access_is_granted() {
@@ -129,11 +131,31 @@ fn spawn_hotkey_listener(
 
 #[cfg(not(target_os = "macos"))]
 fn spawn_hotkey_listener(
-    _shared_config: Arc<Mutex<Config>>,
-    _listening_enabled: Arc<AtomicBool>,
-    _report_status: Arc<dyn Fn(DictationStatus) + Send + Sync>,
-    _sender: Sender<ControllerCommand>,
+    shared_config: Arc<Mutex<Config>>,
+    listening_enabled: Arc<AtomicBool>,
+    report_status: Arc<dyn Fn(DictationStatus) + Send + Sync>,
+    sender: Sender<ControllerCommand>,
 ) {
+    use crate::hotkey::HotkeyEdge;
+    thread::spawn(move || {
+        let created = crate::rdev_hotkey::run_hotkey_listener(
+            shared_config,
+            listening_enabled,
+            Box::new(move |edge| {
+                let command = match edge {
+                    HotkeyEdge::Press => ControllerCommand::StartRecording,
+                    HotkeyEdge::Release => ControllerCommand::StopRecording,
+                };
+                let _ = sender.send(command);
+            }),
+        );
+        if let Err(error) = created {
+            write_engine_log(&format!("hotkey listener failed: {error}"));
+            report_status(DictationStatus::NeedsPermission(
+                "Rustle could not listen for the push-to-talk key.".to_string(),
+            ));
+        }
+    });
 }
 
 fn run_dictation_controller(
@@ -149,8 +171,7 @@ fn run_dictation_controller(
     let mut live_ax_insert_works = true;
     #[cfg(target_os = "macos")]
     let mut insert_target: Option<crate::mac_paste::FrontApp> = None;
-    #[cfg(target_os = "macos")]
-    let mut silenced_output: Option<crate::mac_output::SilencedOutput> = None;
+    let mut silenced_output: Option<crate::output::SilencedOutput> = None;
 
     loop {
         let command = if recording.is_some() {
@@ -232,18 +253,14 @@ fn run_dictation_controller(
         match command {
             ControllerCommand::StartRecording => {
                 if recording.is_none() {
-                    #[cfg(target_os = "macos")]
-                    {
-                        silenced_output = crate::mac_output::silence_system_output();
-                        write_engine_log(&format!("system output silenced={silenced_output:?}"));
-                    }
+                    silenced_output = crate::output::silence_system_output();
+                    write_engine_log(&format!("system output silenced={silenced_output:?}"));
                     let config = shared_config.lock().unwrap().clone();
                     if let Err(error) =
                         ensure_model_loaded(&mut loaded_model, &config.model_file_name)
                     {
-                        #[cfg(target_os = "macos")]
                         if let Some(saved) = silenced_output.take() {
-                            crate::mac_output::restore_system_output(saved);
+                            crate::output::restore_system_output(saved);
                         }
                         report_status(DictationStatus::Failed(format!("{error}")));
                         continue;
@@ -255,6 +272,11 @@ fn run_dictation_controller(
                             insert_origin = None;
                             live_ax_insert_works = true;
                             saved_clipboard = read_clipboard_text();
+                            #[cfg(not(target_os = "macos"))]
+                            write_engine_log(&format!(
+                                "insert target={}",
+                                crate::insert::front_app_name().unwrap_or_else(|| "-".to_string())
+                            ));
                             #[cfg(target_os = "macos")]
                             {
                                 insert_target = crate::mac_paste::insert_target_app();
@@ -283,9 +305,8 @@ fn run_dictation_controller(
                             report_status(DictationStatus::Listening);
                         }
                         Err(error) => {
-                            #[cfg(target_os = "macos")]
                             if let Some(saved) = silenced_output.take() {
-                                crate::mac_output::restore_system_output(saved);
+                                crate::output::restore_system_output(saved);
                             }
                             report_status(DictationStatus::Failed(format!(
                                 "recording failed: {error}"
@@ -296,9 +317,8 @@ fn run_dictation_controller(
             }
             ControllerCommand::StopRecording => {
                 if let Some(active) = recording.take() {
-                    #[cfg(target_os = "macos")]
                     if let Some(saved) = silenced_output.take() {
-                        crate::mac_output::restore_system_output(saved);
+                        crate::output::restore_system_output(saved);
                     }
                     if let Err(error) = transcribe_and_type(
                         active,
@@ -314,20 +334,24 @@ fn run_dictation_controller(
                         report_insert_problem(report_status.as_ref(), &error);
                     }
                     let saved = saved_clipboard.take();
-                    #[cfg(target_os = "macos")]
-                    if insert_target
-                        .as_ref()
-                        .is_some_and(|app| app.is_outlook() || app.is_whatsapp())
-                    {
+                    let delay_clipboard_restore = {
+                        #[cfg(target_os = "macos")]
+                        {
+                            insert_target
+                                .as_ref()
+                                .is_some_and(|app| app.is_outlook() || app.is_whatsapp())
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        {
+                            true
+                        }
+                    };
+                    if delay_clipboard_restore {
                         thread::spawn(move || {
-                            thread::sleep(Duration::from_millis(800));
+                            thread::sleep(CLIPBOARD_RESTORE_AFTER_PASTE);
                             restore_clipboard_text(saved);
                         });
                     } else {
-                        restore_clipboard_text(saved);
-                    }
-                    #[cfg(not(target_os = "macos"))]
-                    {
                         restore_clipboard_text(saved);
                     }
                     inserted_text.clear();
@@ -447,8 +471,17 @@ fn transcribe_and_type(
         }
     }
     report_status(DictationStatus::Typed(spoken.to_string()));
-    #[cfg(target_os = "macos")]
-    if insert_target.is_some_and(|app| app.is_ours()) {
+    let typed_into_settings = {
+        #[cfg(target_os = "macos")]
+        {
+            insert_target.is_some_and(|app| app.is_ours())
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            insert_kind == InsertKind::OwnUi
+        }
+    };
+    if typed_into_settings {
         report_status(DictationStatus::SettingsPreview(spoken.to_string()));
     }
     Ok(())
@@ -584,8 +617,23 @@ fn insert_text_for_target(
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (previous, current, press_return, is_live);
-        Err(anyhow!("insert needs macOS"))
+        let _ = (previous, press_return);
+        if is_live {
+            return Ok(InsertKind::Unchanged);
+        }
+        if crate::insert::front_app_is_ours() {
+            write_engine_log("insert skipped; no other app to type into");
+            return Ok(InsertKind::OwnUi);
+        }
+        crate::insert::paste_transcript(current)?;
+        write_engine_log(&format!(
+            "paste insert used name={} chars={} text={:?}",
+            crate::insert::front_app_name().unwrap_or_else(|| "-".to_string()),
+            current.chars().count(),
+            current
+        ));
+        write_insert_receipt(None, current, false);
+        Ok(InsertKind::Keystroke)
     }
 }
 
@@ -715,7 +763,7 @@ fn sync_focused_text_to_transcript(
     #[cfg(not(target_os = "macos"))]
     {
         let _ = insert_origin;
-        Err(anyhow!("insert needs macOS"))
+        insert_text_for_target(previous, current, false, false)
     }
 }
 
@@ -775,7 +823,7 @@ fn post_return_keystroke() -> Result<()> {
 
 #[cfg(not(target_os = "macos"))]
 fn post_return_keystroke() -> Result<()> {
-    Err(anyhow!("return is only implemented on macOS"))
+    crate::insert::post_return_key()
 }
 
 fn ensure_model_loaded(

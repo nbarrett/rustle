@@ -5,12 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
-
-#[derive(Clone, Copy, Debug)]
-pub enum HotkeyEdge {
-    Press,
-    Release,
-}
+pub use crate::hotkey::HotkeyEdge;
 
 type CFTypeRef = *mut c_void;
 type EventTapCallback =

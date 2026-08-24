@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Create a GitHub release and upload the Mac app
+        description: Create a GitHub release and upload Mac, Windows, and Linux apps
         type: boolean
         default: false
       tag:
@@ -24,7 +24,11 @@ concurrency:
 
 jobs:
   test:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Check out
         uses: actions/checkout@v5
@@ -37,8 +41,15 @@ jobs:
         with:
           workspaces: ". -> target"
 
-      - name: Install cmake if missing
+      - name: Install cmake (macOS)
+        if: runner.os == 'macOS'
         run: command -v cmake >/dev/null || brew install cmake
+
+      - name: Install Linux build packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libasound2-dev libx11-dev libxtst-dev libxi-dev libclang-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf file
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -58,14 +69,24 @@ jobs:
         run: pnpm typecheck
 
       - name: Run unit tests
-        run: cargo test -p rustle-core --lib --no-default-features
+        run: cargo test -p rustle-core --lib
 
   build-and-release:
     needs: test
     if: >-
       github.ref_type == 'tag' ||
       (github.event_name == 'workflow_dispatch' && inputs.publish)
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            pack: macos-aarch64
+          - os: windows-latest
+            pack: windows-x64
+          - os: ubuntu-latest
+            pack: linux-x64
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
     steps:
@@ -74,6 +95,7 @@ jobs:
 
       - name: Align release with package.json
         id: version
+        shell: bash
         run: |
           set -euo pipefail
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
@@ -121,8 +143,15 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install cmake if missing
+      - name: Install cmake (macOS)
+        if: runner.os == 'macOS'
         run: command -v cmake >/dev/null || brew install cmake
+
+      - name: Install Linux build packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libasound2-dev libx11-dev libxtst-dev libxi-dev libclang-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf file
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -139,35 +168,63 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build Mac app
+        if: matrix.pack == 'macos-aarch64'
         run: >
           pnpm tauri build --bundles app
           --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
 
-      - name: Zip the app
+      - name: Build Windows app
+        if: matrix.pack == 'windows-x64'
+        run: pnpm tauri build --bundles nsis
+
+      - name: Build Linux apps
+        if: matrix.pack == 'linux-x64'
+        run: pnpm tauri build --bundles appimage,deb
+
+      - name: Name release files
+        shell: bash
         run: |
-          ditto -c -k --keepParent \
-            target/release/bundle/macos/Rustle.app \
-            "Rustle-${RELEASE_TAG}-macos-aarch64.app.zip"
+          set -euo pipefail
+          mkdir -p release-assets
+          case "${{ matrix.pack }}" in
+            macos-aarch64)
+              ditto -c -k --keepParent \
+                target/release/bundle/macos/Rustle.app \
+                release-assets/Rustle-macos-aarch64.app.zip
+              ;;
+            windows-x64)
+              installer="$(find target -name '*setup.exe' | head -n 1)"
+              cp "${installer}" release-assets/Rustle-windows-x64-setup.exe
+              ;;
+            linux-x64)
+              appimage="$(find target -name '*.AppImage' | head -n 1)"
+              deb="$(find target -name '*.deb' | head -n 1)"
+              cp "${appimage}" release-assets/Rustle-linux-x64.AppImage
+              chmod +x release-assets/Rustle-linux-x64.AppImage
+              cp "${deb}" release-assets/Rustle-linux-x64.deb
+              ;;
+          esac
+          ls -la release-assets
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Rustle-${{ env.RELEASE_TAG }}-macos-aarch64
-          path: Rustle-${{ env.RELEASE_TAG }}-macos-aarch64.app.zip
+          name: Rustle-${{ env.RELEASE_TAG }}-${{ matrix.pack }}
+          path: release-assets/*
 
-      - name: Create GitHub release
+      - name: Attach files to GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
+        shell: bash
         run: |
           set -euo pipefail
-          ZIP="Rustle-${RELEASE_TAG}-macos-aarch64.app.zip"
           attempt=1
           while true; do
             if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-              gh release upload "${RELEASE_TAG}" "${ZIP}" --clobber
-              echo "Release ${RELEASE_TAG} already exists; uploaded ${ZIP}"
+              gh release upload "${RELEASE_TAG}" release-assets/* --clobber
+              echo "Release ${RELEASE_TAG} already exists; uploaded ${{ matrix.pack }}"
               exit 0
             fi
             create_ok=1
@@ -175,13 +232,13 @@ jobs:
               gh release create "${RELEASE_TAG}" \
                 --title "Rustle ${RELEASE_TAG}" \
                 --generate-notes \
-                "${ZIP}" || create_ok=0
+                release-assets/* || create_ok=0
             else
               gh release create "${RELEASE_TAG}" \
                 --title "Rustle ${RELEASE_TAG}" \
                 --generate-notes \
                 --target "${REF_NAME}" \
-                "${ZIP}" || create_ok=0
+                release-assets/* || create_ok=0
             fi
             if [[ "${create_ok}" == "1" ]]; then
               exit 0
@@ -194,3 +251,23 @@ jobs:
             attempt=$((attempt + 1))
             sleep 15
           done
+
+  pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+      - name: Upload download page
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - name: Deploy download page
+        id: deploy
+        uses: actions/deploy-pages@v4

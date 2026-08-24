@@ -38,7 +38,7 @@ fn default_corrections() -> Vec<Correction> {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            hotkey: HotkeyChoice::Function,
+            hotkey: HotkeyChoice::preferred(),
             model_file_name: "ggml-base.en.bin".to_string(),
             input_device_name: None,
             launch_at_login: false,
