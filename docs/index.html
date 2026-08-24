@@ -385,12 +385,12 @@ npx tauri dev</pre>
 <script>
   const OWNER = "nbarrett";
   const REPO = "rustle";
-  const LATEST = `https://github.com/${OWNER}/${REPO}/releases/latest/download`;
+  const RELEASES = `https://github.com/${OWNER}/${REPO}/releases`;
   const FILES = [
-    { id: "macos-aarch64", label: "macOS (Apple Silicon)", file: "Rustle-macos-aarch64.app.zip" },
-    { id: "windows-x64", label: "Windows (x64)", file: "Rustle-windows-x64-setup.exe" },
-    { id: "linux-appimage", label: "Linux AppImage (x64)", file: "Rustle-linux-x64.AppImage" },
-    { id: "linux-deb", label: "Linux .deb (x64)", file: "Rustle-linux-x64.deb" }
+    { id: "macos-aarch64", label: "macOS (Apple Silicon)", match: /macos.*aarch64.*\.zip$/i },
+    { id: "windows-x64", label: "Windows (x64)", match: /windows.*\.(exe|msi)$/i },
+    { id: "linux-appimage", label: "Linux AppImage (x64)", match: /\.AppImage$/i },
+    { id: "linux-deb", label: "Linux .deb (x64)", match: /\.deb$/i }
   ];
 
   function guessedPlatform() {
@@ -400,26 +400,24 @@ npx tauri dev</pre>
     return "macos-aarch64";
   }
 
-  function fileUrl(fileName, assets) {
-    const match = assets.find((asset) => asset.name === fileName);
-    if (match) return match.browser_download_url;
-    return `${LATEST}/${fileName}`;
+  function matchAsset(item, assets) {
+    return assets.find((asset) => item.match.test(asset.name));
   }
 
-  function render(assets) {
-    const names = new Set(assets.map((asset) => asset.name));
+  function render(assets, tag) {
     const platform = guessedPlatform();
-    const preferred =
-      FILES.find((item) => item.id === platform && names.has(item.file)) ||
-      FILES.find((item) => item.id === platform);
-    const present = names.size === 0 || names.has(preferred.file);
-    document.getElementById("detected").textContent = present
-      ? `This computer looks like ${preferred.label}.`
-      : `This computer looks like ${preferred.label}, but that file is not in the latest release.`;
+    const preferred = FILES.find((item) => item.id === platform);
+    const preferredAsset = matchAsset(preferred, assets);
+    const tagLabel = tag ? `Latest release is ${tag}. ` : "";
+    document.getElementById("detected").textContent = preferredAsset
+      ? `${tagLabel}This computer looks like ${preferred.label}.`
+      : `${tagLabel}This computer looks like ${preferred.label}. That file is not in this release yet.`;
     const primary = document.getElementById("primary");
-    primary.href = fileUrl(preferred.file, assets);
-    primary.textContent = `Download for ${preferred.label}`;
-    document.getElementById("missing").hidden = names.size === 0 || names.has(preferred.file);
+    primary.href = preferredAsset ? preferredAsset.browser_download_url : RELEASES;
+    primary.textContent = preferredAsset
+      ? `Download for ${preferred.label}`
+      : "See releases";
+    document.getElementById("missing").hidden = Boolean(preferredAsset) || assets.length === 0;
 
     const list = document.getElementById("platforms");
     list.replaceChildren();
@@ -429,19 +427,24 @@ npx tauri dev</pre>
       name.className = "os";
       name.textContent = item.label;
       const link = document.createElement("a");
-      const available = names.size === 0 || names.has(item.file);
-      link.textContent = available ? "Download" : "Not on this release";
-      link.href = fileUrl(item.file, assets);
-      if (!available) link.setAttribute("aria-disabled", "true");
+      const asset = matchAsset(item, assets);
+      if (asset) {
+        link.textContent = "Download";
+        link.href = asset.browser_download_url;
+      } else {
+        link.textContent = "Not in this release yet";
+        link.href = RELEASES;
+        link.setAttribute("aria-disabled", "true");
+      }
       row.append(name, link);
       list.appendChild(row);
     }
   }
 
-  render([]);
+  render([], "");
   fetch(`https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`)
     .then((response) => (response.ok ? response.json() : Promise.reject()))
-    .then((release) => render(release.assets || []))
+    .then((release) => render(release.assets || [], release.tag_name || ""))
     .catch(() => {});
 </script>
 </body>
