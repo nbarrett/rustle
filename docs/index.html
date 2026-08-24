@@ -1,218 +1,421 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Download Rustle</title>
-    <style>
-      :root {
-        --background: #f6f6f7;
-        --surface: #ffffff;
-        --border: #e2e2e6;
-        --text: #17171a;
-        --text-muted: #6b6b74;
-        --accent: #0f766e;
-        --accent-text: #ffffff;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --background: #17171a;
-          --surface: #202024;
-          --border: #33333a;
-          --text: #f2f2f4;
-          --text-muted: #a0a0aa;
-          --accent: #2dd4bf;
-          --accent-text: #062925;
-        }
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        font: 16px/1.5 system-ui, sans-serif;
-        color: var(--text);
-        background: var(--background);
-      }
-      main {
-        max-width: 40rem;
-        margin: 0 auto;
-        padding: 4rem 1.5rem 6rem;
-      }
-      h1 {
-        font-size: 2rem;
-        letter-spacing: -0.03em;
-        margin: 0 0 0.4rem;
-      }
-      .lede {
-        color: var(--text-muted);
-        margin: 0 0 2rem;
-      }
-      .primary {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 2.75rem;
-        padding: 0 1.25rem;
-        border: 0;
-        border-radius: 8px;
-        background: var(--accent);
-        color: var(--accent-text);
-        font: inherit;
-        font-weight: 600;
-        text-decoration: none;
-      }
-      .primary[hidden], .missing[hidden] { display: none; }
-      .primary:hover { filter: brightness(1.05); }
-      .detected {
-        margin: 0 0 0.75rem;
-        color: var(--text-muted);
-        font-size: 0.9rem;
-      }
-      .missing {
-        margin: 1rem 0 0;
-        padding: 0.9rem 1rem;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--surface);
-        color: var(--text-muted);
-      }
-      h2 {
-        font-size: 0.8rem;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--text-muted);
-        margin: 2.5rem 0 0.75rem;
-      }
-      .platforms {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: var(--surface);
-        overflow: hidden;
-      }
-      .platforms li {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        align-items: center;
-        padding: 0.85rem 1rem;
-        border-top: 1px solid var(--border);
-      }
-      .platforms li:first-child { border-top: 0; }
-      .platforms a {
-        color: var(--accent);
-        text-decoration: none;
-        font-weight: 600;
-        white-space: nowrap;
-      }
-      .platforms a[aria-disabled="true"] {
-        color: var(--text-muted);
-        font-weight: 400;
-        pointer-events: none;
-      }
-      .note {
-        margin: 2rem 0 0;
-        color: var(--text-muted);
-        font-size: 0.92rem;
-      }
-      .note a { color: var(--accent); }
-      code {
-        font-size: 0.85em;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        padding: 0.1em 0.35em;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>Download Rustle</h1>
-      <p class="lede">
-        Local dictation. Hold a key, talk, and the words appear in the app you were using.
-        Nothing is sent to a server.
-      </p>
-      <p class="detected" id="detected"></p>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download Rustle</title>
+<meta name="description" content="Local dictation. Hold a key, talk, and the words appear in the app you were using. Whisper runs on your machine.">
+<meta property="og:title" content="Download Rustle">
+<meta property="og:description" content="Local dictation. Hold a key, talk, and the words appear in the app you were using.">
+<meta property="og:image" content="settings.jpg">
+<link rel="icon" href="icon.png" type="image/png">
+<style>
+  :root {
+    --ground: #0e1a18;
+    --ground-2: #081210;
+    --panel: #152421;
+    --panel-2: #1b2e2a;
+    --line: #2a403b;
+    --ink: #eef6f4;
+    --muted: #8aa39c;
+    --muted-2: #647870;
+    --teal: #1aa38f;
+    --teal-deep: #0f766e;
+    --teal-soft: #7ee0d0;
+    --good: #6fcf97;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(900px 480px at 50% -180px, #1a3d36 0%, var(--ground) 58%, var(--ground-2) 100%),
+      var(--ground-2);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--teal-soft); }
+  a:hover { color: #fff; }
+
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 22px 96px; }
+
+  nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 22px 0 8px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--ink);
+    text-decoration: none;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .brand img { width: 36px; height: 36px; border-radius: 9px; }
+  .nav-links { display: flex; gap: 8px; flex-wrap: wrap; }
+  .nav-links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 14px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+  }
+  .nav-links a:hover {
+    color: var(--ink);
+    border-color: var(--line);
+    background: rgba(255,255,255,.04);
+  }
+  .nav-links svg { width: 16px; height: 16px; fill: currentColor; }
+
+  header.hero { padding: 48px 0 28px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(36px, 7vw, 64px);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 0.98;
+    margin: 0;
+    text-wrap: balance;
+    max-width: 14ch;
+  }
+  .sub {
+    margin: 18px 0 0;
+    color: var(--muted);
+    font-size: clamp(17px, 2.4vw, 20px);
+    line-height: 1.45;
+    max-width: 42ch;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 28px;
+    align-items: center;
+  }
+  .primary, .ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 0 18px;
+    border-radius: 10px;
+    font: inherit;
+    font-weight: 650;
+    text-decoration: none;
+  }
+  .primary {
+    background: var(--teal);
+    color: #062925;
+    border: 0;
+  }
+  .primary:hover { background: var(--teal-soft); color: #062925; }
+  .ghost {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .ghost:hover { border-color: var(--teal); color: var(--teal-soft); }
+  .ghost svg { width: 16px; height: 16px; fill: currentColor; }
+  .detected {
+    margin: 14px 0 0;
+    color: var(--muted-2);
+    font-size: 14px;
+  }
+  .missing {
+    margin: 16px 0 0;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+    color: var(--muted);
+    max-width: 52ch;
+  }
+  .missing[hidden] { display: none; }
+
+  .shot {
+    margin-top: 40px;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    box-shadow: 0 40px 80px -36px rgba(0,0,0,.7);
+    background: #111;
+  }
+  .shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .shot-cap {
+    margin: 10px 2px 0;
+    color: var(--muted-2);
+    font-size: 13px;
+  }
+
+  h2 {
+    font-size: clamp(22px, 3vw, 28px);
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    margin: 0 0 14px;
+  }
+  section { margin-top: 56px; }
+
+  .platforms {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--panel);
+    overflow: hidden;
+  }
+  .platforms li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    padding: 16px 18px;
+    border-top: 1px solid var(--line);
+  }
+  .platforms li:first-child { border-top: 0; }
+  .platforms .os { font-weight: 600; }
+  .platforms a {
+    color: var(--teal-soft);
+    text-decoration: none;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .platforms a[aria-disabled="true"] {
+    color: var(--muted-2);
+    font-weight: 400;
+    pointer-events: none;
+  }
+
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .step {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 18px 16px;
+  }
+  .step n {
+    display: block;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 8px;
+  }
+  .step p { margin: 0; color: var(--muted); }
+
+  pre {
+    margin: 0;
+    padding: 16px 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    color: var(--teal-soft);
+  }
+
+  .note {
+    color: var(--muted);
+    font-size: 15px;
+    max-width: 62ch;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.08em 0.35em;
+  }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+    color: var(--muted-2);
+    font-size: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 22px;
+    justify-content: space-between;
+  }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--teal-soft); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <nav>
+    <a class="brand" href="./">
+      <img src="icon.png" width="36" height="36" alt="">
+      Rustle
+    </a>
+    <div class="nav-links">
+      <a href="https://github.com/nbarrett/rustle">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+        GitHub
+      </a>
+      <a href="https://github.com/nbarrett/rustle/releases">Releases</a>
+      <a href="https://github.com/nbarrett/rustle#readme">Project</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <p class="eyebrow">Local dictation</p>
+    <h1>Hold a key. Talk. The words appear.</h1>
+    <p class="sub">Whisper runs on your machine. Nothing is sent to a server. The grey bar shows what it heard; the text goes into the app you were using.</p>
+    <div class="actions">
       <a class="primary" id="primary" href="https://github.com/nbarrett/rustle/releases/latest">Download</a>
-      <p class="missing" id="missing" hidden>
-        A build for this computer is not on the latest release yet. Use another file below, or run it from source.
-      </p>
+      <a class="ghost" href="https://github.com/nbarrett/rustle">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+        View source on GitHub
+      </a>
+    </div>
+    <p class="detected" id="detected"></p>
+    <p class="missing" id="missing" hidden>
+      A build for this computer is not on the latest release yet. Use another file below, or run it from source.
+    </p>
+  </header>
 
-      <h2>All platforms</h2>
-      <ul class="platforms" id="platforms"></ul>
+  <figure class="shot">
+    <img src="settings.jpg" width="1600" height="1000" alt="Rustle settings beside a terminal, with the spoken line already typed into the app behind it.">
+  </figure>
+  <p class="shot-cap">Settings on the right. The words go into whatever you were using, not into Rustle.</p>
 
-      <p class="note">
-        macOS builds are not from the App Store: right-click the app, choose Open.
-        Windows may warn about an unsigned installer. Linux paste needs
-        <code>xdotool</code>, <code>wtype</code>, or <code>ydotool</code>.
-        Locked-down machines can unzip into a home folder, or run from source with
-        <code>npm install</code> then <code>npx tauri dev</code>.
-        Source and older versions are on
-        <a href="https://github.com/nbarrett/rustle">GitHub</a>.
-      </p>
-    </main>
-    <script>
-      const OWNER = "nbarrett";
-      const REPO = "rustle";
-      const LATEST = `https://github.com/${OWNER}/${REPO}/releases/latest/download`;
-      const FILES = [
-        { id: "macos-aarch64", label: "macOS (Apple Silicon)", file: "Rustle-macos-aarch64.app.zip" },
-        { id: "windows-x64", label: "Windows (x64)", file: "Rustle-windows-x64-setup.exe" },
-        { id: "linux-appimage", label: "Linux AppImage (x64)", file: "Rustle-linux-x64.AppImage" },
-        { id: "linux-deb", label: "Linux .deb (x64)", file: "Rustle-linux-x64.deb" },
-      ];
+  <section>
+    <h2>Download for your computer</h2>
+    <ul class="platforms" id="platforms"></ul>
+  </section>
 
-      function guessedPlatform() {
-        const ua = navigator.userAgent;
-        if (/Windows/i.test(ua)) return "windows-x64";
-        if (/Linux/i.test(ua) && !/Android/i.test(ua)) return "linux-appimage";
-        return "macos-aarch64";
-      }
+  <section>
+    <h2>How it works</h2>
+    <div class="steps">
+      <div class="step"><n>01</n><p>Hold the push-to-talk key. The grey bar shows Listening.</p></div>
+      <div class="step"><n>02</n><p>Speak. Whisper transcribes on this machine.</p></div>
+      <div class="step"><n>03</n><p>Release. The words appear in the front app.</p></div>
+    </div>
+    <p class="note" style="margin-top:18px;">
+      macOS: right-click the app and choose Open (it is not from the App Store). Grant Microphone, Input Monitoring and Accessibility, then quit and reopen.
+      Windows may warn about an unsigned installer.
+      Linux paste needs <code>xdotool</code>, <code>wtype</code> or <code>ydotool</code>.
+    </p>
+  </section>
 
-      function fileUrl(fileName, assets) {
-        const match = assets.find((asset) => asset.name === fileName);
-        if (match) return match.browser_download_url;
-        return `${LATEST}/${fileName}`;
-      }
+  <section>
+    <h2>From source</h2>
+    <p class="note">Needs Rust, cmake and Node. Nothing is installed globally, and nothing has to go in <code>/Applications</code>.</p>
+    <pre>npm install
+npx tauri dev</pre>
+  </section>
 
-      function render(assets) {
-        const names = new Set(assets.map((asset) => asset.name));
-        const platform = guessedPlatform();
-        const preferred =
-          FILES.find((item) => item.id === platform && names.has(item.file)) ||
-          FILES.find((item) => item.id === platform);
-        const present = preferred && (names.size === 0 || names.has(preferred.file));
-        document.getElementById("detected").textContent = present
-          ? `This computer looks like ${preferred.label}.`
-          : `This computer looks like ${preferred.label}, but that file is not in the latest release.`;
-        const primary = document.getElementById("primary");
-        primary.href = fileUrl(preferred.file, assets);
-        primary.textContent = `Download for ${preferred.label}`;
-        document.getElementById("missing").hidden = names.size === 0 || names.has(preferred.file);
+  <footer>
+    <span>MIT. Whisper stays on the machine.</span>
+    <span>
+      <a href="https://github.com/nbarrett/rustle">GitHub</a>
+      ·
+      <a href="https://github.com/nbarrett/rustle/releases">Releases</a>
+      ·
+      <a href="./">Download</a>
+    </span>
+  </footer>
+</div>
 
-        const list = document.getElementById("platforms");
-        list.replaceChildren();
-        for (const item of FILES) {
-          const row = document.createElement("li");
-          const name = document.createElement("span");
-          name.textContent = item.label;
-          const link = document.createElement("a");
-          const available = names.size === 0 || names.has(item.file);
-          link.textContent = available ? "Download" : "Not on this release";
-          link.href = fileUrl(item.file, assets);
-          if (!available) link.setAttribute("aria-disabled", "true");
-          row.append(name, link);
-          list.appendChild(row);
-        }
-      }
+<script>
+  const OWNER = "nbarrett";
+  const REPO = "rustle";
+  const LATEST = `https://github.com/${OWNER}/${REPO}/releases/latest/download`;
+  const FILES = [
+    { id: "macos-aarch64", label: "macOS (Apple Silicon)", file: "Rustle-macos-aarch64.app.zip" },
+    { id: "windows-x64", label: "Windows (x64)", file: "Rustle-windows-x64-setup.exe" },
+    { id: "linux-appimage", label: "Linux AppImage (x64)", file: "Rustle-linux-x64.AppImage" },
+    { id: "linux-deb", label: "Linux .deb (x64)", file: "Rustle-linux-x64.deb" }
+  ];
 
-      render([]);
-      fetch(`https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`)
-        .then((response) => (response.ok ? response.json() : Promise.reject()))
-        .then((release) => render(release.assets || []))
-        .catch(() => {});
-    </script>
-  </body>
+  function guessedPlatform() {
+    const ua = navigator.userAgent;
+    if (/Windows/i.test(ua)) return "windows-x64";
+    if (/Linux/i.test(ua) && !/Android/i.test(ua)) return "linux-appimage";
+    return "macos-aarch64";
+  }
+
+  function fileUrl(fileName, assets) {
+    const match = assets.find((asset) => asset.name === fileName);
+    if (match) return match.browser_download_url;
+    return `${LATEST}/${fileName}`;
+  }
+
+  function render(assets) {
+    const names = new Set(assets.map((asset) => asset.name));
+    const platform = guessedPlatform();
+    const preferred =
+      FILES.find((item) => item.id === platform && names.has(item.file)) ||
+      FILES.find((item) => item.id === platform);
+    const present = names.size === 0 || names.has(preferred.file);
+    document.getElementById("detected").textContent = present
+      ? `This computer looks like ${preferred.label}.`
+      : `This computer looks like ${preferred.label}, but that file is not in the latest release.`;
+    const primary = document.getElementById("primary");
+    primary.href = fileUrl(preferred.file, assets);
+    primary.textContent = `Download for ${preferred.label}`;
+    document.getElementById("missing").hidden = names.size === 0 || names.has(preferred.file);
+
+    const list = document.getElementById("platforms");
+    list.replaceChildren();
+    for (const item of FILES) {
+      const row = document.createElement("li");
+      const name = document.createElement("span");
+      name.className = "os";
+      name.textContent = item.label;
+      const link = document.createElement("a");
+      const available = names.size === 0 || names.has(item.file);
+      link.textContent = available ? "Download" : "Not on this release";
+      link.href = fileUrl(item.file, assets);
+      if (!available) link.setAttribute("aria-disabled", "true");
+      row.append(name, link);
+      list.appendChild(row);
+    }
+  }
+
+  render([]);
+  fetch(`https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`)
+    .then((response) => (response.ok ? response.json() : Promise.reject()))
+    .then((release) => render(release.assets || []))
+    .catch(() => {});
+</script>
+</body>
 </html>
