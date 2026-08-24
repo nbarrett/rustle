@@ -177,32 +177,36 @@ jobs:
             exit 1
           fi
 
+      - name: Write updater bundle config
+        shell: bash
+        run: |
+          if [[ "${{ matrix.pack }}" == "macos-aarch64" ]]; then
+            printf '%s\n' '{"bundle":{"createUpdaterArtifacts":true,"macOS":{"signingIdentity":"-"}}}' > updater-bundle.json
+          else
+            printf '%s\n' '{"bundle":{"createUpdaterArtifacts":true}}' > updater-bundle.json
+          fi
+
       - name: Build Mac app
         if: matrix.pack == 'macos-aarch64'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: >
-          pnpm tauri build --bundles dmg
-          --config '{"bundle":{"createUpdaterArtifacts":true,"macOS":{"signingIdentity":"-"}}}'
+        run: pnpm tauri build --bundles app,dmg --config updater-bundle.json
 
       - name: Build Windows app
         if: matrix.pack == 'windows-x64'
+        shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: >
-          pnpm tauri build --bundles nsis
-          --config '{"bundle":{"createUpdaterArtifacts":true}}'
+        run: pnpm tauri build --bundles nsis --config updater-bundle.json
 
       - name: Build Linux apps
         if: matrix.pack == 'linux-x64'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: >
-          pnpm tauri build --bundles appimage,deb
-          --config '{"bundle":{"createUpdaterArtifacts":true}}'
+        run: pnpm tauri build --bundles appimage,deb --config updater-bundle.json
 
       - name: Name release files
         shell: bash
@@ -228,6 +232,11 @@ jobs:
               dmg="$(find target -name '*.dmg' | head -n 1)"
               tarball="$(find target -name '*.app.tar.gz' | head -n 1)"
               sig="$(find target -name '*.app.tar.gz.sig' | head -n 1)"
+              if [[ -z "${dmg}" || -z "${tarball}" || -z "${sig}" ]]; then
+                echo "Missing Mac updater files"
+                find target -name '*.dmg' -o -name '*.tar.gz' -o -name '*.sig'
+                exit 1
+              fi
               cp "${dmg}" release-assets/Rustle-macos-aarch64.dmg
               cp "${tarball}" release-assets/Rustle-macos-aarch64.app.tar.gz
               cp "${sig}" release-assets/Rustle-macos-aarch64.app.tar.gz.sig
