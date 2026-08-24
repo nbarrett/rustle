@@ -365,7 +365,7 @@ jobs:
           print(json.dumps(manifest, indent=2))
           PY
           RELEASE_TAG="v$(python3 -c 'import json; print(json.load(open("latest.json"))["version"])')"
-          gh release upload "${RELEASE_TAG}" latest.json --clobber
+          gh release upload "${RELEASE_TAG}" latest.json --clobber --repo "${GITHUB_REPOSITORY}"
 
   pages:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
