@@ -197,12 +197,23 @@ select {
 select {
   appearance: none;
   width: 100%;
-  padding: 9px 12px;
+  padding: 9px 32px 9px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%236b6b74' d='M1.2 1.2 6 6l4.8-4.8'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 8px;
   color: var(--text);
   font-size: 14px;
+}
+
+html[data-os="windows"] select,
+html[data-os="linux"] select {
+  appearance: auto;
+  padding-right: 12px;
+  background-image: none;
 }
 
 .inline-row {

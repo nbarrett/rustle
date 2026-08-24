@@ -16,6 +16,7 @@ import {
   setDictationEnabled,
 } from "./commands";
 import type {
+  Config,
   Correction,
   DictationStatusEvent,
   HistoryEntry,
@@ -25,13 +26,22 @@ import type {
 } from "./types";
 
 let hotkeyChoices: HotkeyOption[] = [
-  { value: "Function", label: "🌐 Globe (fn)" },
+  { value: "Function", label: "fn (Globe)" },
   { value: "RightOption", label: "Right Option" },
   { value: "RightControl", label: "Right Control" },
   { value: "F8", label: "F8" },
   { value: "F9", label: "F9" },
 ];
-let platformName = "macos";
+
+function hostOsFromUserAgent(): string {
+  const ua = navigator.userAgent;
+  if (/Windows/i.test(ua)) return "windows";
+  if (/Linux/i.test(ua) && !/Android/i.test(ua)) return "linux";
+  return "macos";
+}
+
+let platformName = hostOsFromUserAgent();
+document.documentElement.dataset.os = platformName;
 
 const HISTORY_STORAGE_KEY = "rustle-history";
 const HISTORY_LIMIT = 200;
@@ -475,6 +485,7 @@ function setUpTabs(): void {
 }
 
 function applyPlatformCopy(): void {
+  document.documentElement.dataset.os = platformName;
   elements.enterCaption.textContent =
     platformName === "macos"
       ? "Press Return when you release the key"
@@ -487,11 +498,26 @@ function applyPlatformCopy(): void {
         : "Open system settings";
 }
 
+function fallbackConfig(): Config {
+  return {
+    hotkey: hotkeyChoices[0]?.value ?? "RightControl",
+    model_file_name: DEFAULT_MODEL_FILE_NAME,
+    input_device_name: null,
+    launch_at_login: false,
+    press_enter_on_release: false,
+    corrections: [],
+  };
+}
+
 async function initialise(): Promise<void> {
-  platformName = await hostPlatform().catch(() => "macos");
-  hotkeyChoices = await listHotkeyChoices().catch(() => hotkeyChoices);
+  platformName = await hostPlatform().catch(hostOsFromUserAgent);
+  const listedHotkeys = await listHotkeyChoices().catch(() => [] as HotkeyOption[]);
+  if (listedHotkeys.length > 0) {
+    hotkeyChoices = listedHotkeys;
+  }
   applyPlatformCopy();
-  const config = await getConfig();
+  populateHotkeys(hotkeyChoices[0]?.value ?? "RightControl");
+  const config = await getConfig().catch(fallbackConfig);
   selectedModelFileName = config.model_file_name;
   try {
     elements.appVersion.textContent = await getAppVersion();
@@ -586,4 +612,9 @@ async function initialise(): Promise<void> {
   fitWindowToContent();
 }
 
-void initialise();
+void initialise().catch((error) => {
+  populateHotkeys(hotkeyChoices[0]?.value ?? "RightControl");
+  void populateMicrophones(null);
+  void populateModels();
+  elements.saveNote.textContent = `Could not load settings: ${String(error)}`;
+});

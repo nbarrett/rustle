@@ -11,7 +11,7 @@ use rustle_core::hotkey::{HotkeyChoice, HotkeyOption};
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::{AutoLaunchManager, MacosLauncher};
 
 const LAUNCHED_AT_LOGIN_ARGUMENT: &str = "--launched-at-login";
@@ -53,9 +53,18 @@ fn get_app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+fn current_engine_config(app: &AppHandle) -> Config {
+    if let Some(state) = app.try_state::<Mutex<EngineState>>() {
+        if let Ok(guard) = state.lock() {
+            return guard.engine.current_config();
+        }
+    }
+    load_config().unwrap_or_default()
+}
+
 #[tauri::command]
-fn get_config(state: State<'_, Mutex<EngineState>>) -> Config {
-    state.lock().unwrap().engine.current_config()
+fn get_config(app: AppHandle) -> Config {
+    current_engine_config(&app)
 }
 
 #[tauri::command]
@@ -63,15 +72,13 @@ fn save_and_apply_config(
     app: AppHandle,
     new_config: Config,
     hide_window: Option<bool>,
-    state: State<'_, Mutex<EngineState>>,
 ) -> Result<(), String> {
     save_config(&new_config).map_err(|error| error.to_string())?;
     apply_launch_at_login(&app, new_config.launch_at_login);
-    {
-        let engine_state = state
-            .lock()
-            .map_err(|_| "engine state was unavailable".to_string())?;
-        engine_state.engine.apply_config(new_config);
+    if let Some(state) = app.try_state::<Mutex<EngineState>>() {
+        if let Ok(guard) = state.lock() {
+            guard.engine.apply_config(new_config);
+        }
     }
     if hide_window.unwrap_or(true) {
         conceal_settings_window(&app);
@@ -103,13 +110,22 @@ fn list_models() -> Vec<ModelChoice> {
 }
 
 #[tauri::command]
-fn set_dictation_enabled(enabled: bool, state: State<'_, Mutex<EngineState>>) {
-    state.lock().unwrap().engine.set_listening_enabled(enabled);
+fn set_dictation_enabled(enabled: bool, app: AppHandle) {
+    if let Some(state) = app.try_state::<Mutex<EngineState>>() {
+        if let Ok(guard) = state.lock() {
+            guard.engine.set_listening_enabled(enabled);
+        }
+    }
 }
 
 #[tauri::command]
-fn get_dictation_enabled(state: State<'_, Mutex<EngineState>>) -> bool {
-    state.lock().unwrap().engine.is_listening_enabled()
+fn get_dictation_enabled(app: AppHandle) -> bool {
+    if let Some(state) = app.try_state::<Mutex<EngineState>>() {
+        if let Ok(guard) = state.lock() {
+            return guard.engine.is_listening_enabled();
+        }
+    }
+    true
 }
 
 #[tauri::command]
@@ -285,14 +301,6 @@ fn main() {
             }
             let config = load_config().unwrap_or_default();
             apply_launch_at_login(app.handle(), config.launch_at_login);
-            #[cfg(not(target_os = "macos"))]
-            create_hud_window(app);
-            let overlay = DictationOverlay::create();
-            let tray = build_tray_icon(app)?;
-            app.manage(FeedbackState {
-                overlay,
-                tray: tray.clone(),
-            });
 
             let status_app = app.handle().clone();
             let engine = DictationEngine::start(config, move |status| {
@@ -308,8 +316,16 @@ fn main() {
                 });
             })
             .map_err(|error| error.to_string())?;
-
             app.manage(Mutex::new(EngineState { engine }));
+
+            #[cfg(not(target_os = "macos"))]
+            create_hud_window(app);
+            let overlay = DictationOverlay::create();
+            let tray = build_tray_icon(app)?;
+            app.manage(FeedbackState {
+                overlay,
+                tray: tray.clone(),
+            });
             Ok(())
         })
         .on_window_event(|window, event| {

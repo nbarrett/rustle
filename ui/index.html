@@ -44,19 +44,31 @@
 
           <div class="field">
             <label class="field-label" for="hotkey-select">Push-to-talk key</label>
-            <select id="hotkey-select"></select>
+            <select id="hotkey-select">
+              <option value="RightControl">Right Control</option>
+              <option value="RightOption">Right Alt</option>
+              <option value="F8">F8</option>
+              <option value="F9">F9</option>
+            </select>
             <p class="field-hint">Hold to talk, release to type into the focused app.</p>
           </div>
 
           <div class="field">
             <label class="field-label" for="microphone-select">Microphone</label>
-            <select id="microphone-select"></select>
+            <select id="microphone-select">
+              <option value="">System default</option>
+            </select>
           </div>
 
           <div class="field">
             <label class="field-label" for="model-select">Model</label>
             <div class="inline-row">
-              <select id="model-select"></select>
+              <select id="model-select">
+                <option value="ggml-base.en.bin">base.en</option>
+                <option value="ggml-small.en.bin">small.en</option>
+                <option value="ggml-medium.en.bin">medium.en</option>
+                <option value="ggml-large-v3.bin">large-v3</option>
+              </select>
               <button id="model-download" class="secondary" type="button" hidden>Download</button>
             </div>
             <p class="field-hint" id="download-status"></p>
