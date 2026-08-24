@@ -33,7 +33,7 @@ pub fn front_app_is_ours() -> bool {
 
 pub fn front_app_name() -> Option<String> {
     let hwnd = unsafe { GetForegroundWindow() };
-    if hwnd.0 == 0 {
+    if hwnd.0.is_null() {
         return None;
     }
     let mut buffer = [0u16; 512];
@@ -46,7 +46,7 @@ pub fn front_app_name() -> Option<String> {
 
 fn foreground_pid() -> Option<u32> {
     let hwnd = unsafe { GetForegroundWindow() };
-    if hwnd.0 == 0 {
+    if hwnd.0.is_null() {
         return None;
     }
     let mut process_id = 0u32;
@@ -59,7 +59,7 @@ fn foreground_pid() -> Option<u32> {
 }
 
 fn focus_window(hwnd: HWND) {
-    if hwnd.0 != 0 {
+    if !hwnd.0.is_null() {
         let _ = unsafe { SetForegroundWindow(hwnd) };
     }
 }

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 pub fn paste_transcript(text: &str) -> Result<()> {
     if text.is_empty() {
@@ -15,7 +15,7 @@ pub fn paste_transcript(text: &str) -> Result<()> {
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let _ = text;
-        Err(anyhow!("paste is not implemented on this OS"))
+        Err(anyhow::anyhow!("paste is not implemented on this OS"))
     }
 }
 
@@ -30,7 +30,7 @@ pub fn post_return_key() -> Result<()> {
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
-        Err(anyhow!("return is not implemented on this OS"))
+        Err(anyhow::anyhow!("return is not implemented on this OS"))
     }
 }
 
