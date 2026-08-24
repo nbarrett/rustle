@@ -3,288 +3,309 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Download Rustle</title>
-<meta name="description" content="Local dictation. Hold a key, talk, and the words appear in the app you were using. Whisper runs on your machine.">
-<meta property="og:title" content="Download Rustle">
-<meta property="og:description" content="Local dictation. Hold a key, talk, and the words appear in the app you were using.">
+<title>Rustle – on-device dictation</title>
+<meta name="description" content="Hold a key, speak, and the words appear in the app you were using. Whisper runs on your machine. Nothing is sent to a server.">
+<meta property="og:title" content="Rustle">
+<meta property="og:description" content="On-device dictation for macOS, Windows and Linux.">
 <meta property="og:image" content="settings.jpg">
 <link rel="icon" href="icon.png" type="image/png">
 <style>
   :root {
-    --ground: #0e1a18;
-    --ground-2: #081210;
-    --panel: #152421;
-    --panel-2: #1b2e2a;
-    --line: #2a403b;
-    --ink: #eef6f4;
-    --muted: #8aa39c;
-    --muted-2: #647870;
-    --teal: #1aa38f;
-    --teal-deep: #0f766e;
-    --teal-soft: #7ee0d0;
-    --good: #6fcf97;
+    --bg: #f6f6f7;
+    --surface: #ffffff;
+    --line: #e2e2e6;
+    --text: #17171a;
+    --muted: #6b6b74;
+    --accent: #0f766e;
+    --accent-text: #ffffff;
+    --accent-hover: #0c5f59;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Helvetica, Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --radius: 12px;
+    --shadow: 0 24px 60px -28px rgba(23, 23, 26, 0.35);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17171a;
+      --surface: #202024;
+      --line: #33333a;
+      --text: #f2f2f4;
+      --muted: #a0a0aa;
+      --accent: #2dd4bf;
+      --accent-text: #062925;
+      --accent-hover: #5eead4;
+      --shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.55);
+    }
   }
 
   * { box-sizing: border-box; }
 
+  html, body { margin: 0; }
   body {
-    margin: 0;
     min-height: 100vh;
-    background:
-      radial-gradient(900px 480px at 50% -180px, #1a3d36 0%, var(--ground) 58%, var(--ground-2) 100%),
-      var(--ground-2);
-    color: var(--ink);
+    background: var(--bg);
+    color: var(--text);
     font-family: var(--sans);
-    line-height: 1.55;
+    font-size: 16px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
 
-  a { color: var(--teal-soft); }
-  a:hover { color: #fff; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
 
-  .wrap { max-width: 980px; margin: 0 auto; padding: 0 22px 96px; }
+  .page {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
 
   nav {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    padding: 22px 0 8px;
+    padding: 20px 0;
   }
   .brand {
     display: flex;
     align-items: center;
     gap: 10px;
-    color: var(--ink);
-    text-decoration: none;
-    font-weight: 700;
+    color: var(--text);
+    font-weight: 650;
+    font-size: 17px;
     letter-spacing: -0.02em;
+    text-decoration: none;
   }
-  .brand img { width: 36px; height: 36px; border-radius: 9px; }
-  .nav-links { display: flex; gap: 8px; flex-wrap: wrap; }
+  .brand:hover { text-decoration: none; }
+  .brand img { width: 32px; height: 32px; border-radius: 8px; }
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
   .nav-links a {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     color: var(--muted);
-    text-decoration: none;
     font-size: 14px;
+    font-weight: 500;
     padding: 8px 12px;
     border-radius: 8px;
-    border: 1px solid transparent;
+    text-decoration: none;
   }
   .nav-links a:hover {
-    color: var(--ink);
-    border-color: var(--line);
-    background: rgba(255,255,255,.04);
+    color: var(--text);
+    background: var(--surface);
   }
-  .nav-links svg { width: 16px; height: 16px; fill: currentColor; }
+  .nav-links svg { width: 15px; height: 15px; fill: currentColor; }
 
-  header.hero { padding: 48px 0 28px; }
-  .eyebrow {
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: var(--teal);
-    margin: 0 0 14px;
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 56px;
+    align-items: start;
+    padding: 48px 0 24px;
   }
+  @media (max-width: 840px) {
+    .hero { grid-template-columns: 1fr; gap: 36px; padding-top: 28px; }
+    .hero-visual { max-width: 340px; margin: 0 auto; }
+  }
+
   h1 {
-    font-size: clamp(36px, 7vw, 64px);
-    font-weight: 800;
-    letter-spacing: -0.035em;
-    line-height: 0.98;
     margin: 0;
-    text-wrap: balance;
-    max-width: 14ch;
+    font-size: clamp(36px, 5vw, 52px);
+    font-weight: 700;
+    letter-spacing: -0.038em;
+    line-height: 1.05;
   }
-  .sub {
-    margin: 18px 0 0;
+  .lede {
+    margin: 16px 0 0;
     color: var(--muted);
-    font-size: clamp(17px, 2.4vw, 20px);
+    font-size: 18px;
     line-height: 1.45;
-    max-width: 42ch;
+    max-width: 38ch;
   }
 
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 10px;
     margin-top: 28px;
-    align-items: center;
   }
-  .primary, .ghost {
+  .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    min-height: 48px;
-    padding: 0 18px;
+    min-height: 44px;
+    padding: 0 16px;
     border-radius: 10px;
     font: inherit;
-    font-weight: 650;
+    font-size: 15px;
+    font-weight: 600;
     text-decoration: none;
+    border: 1px solid transparent;
   }
-  .primary {
-    background: var(--teal);
-    color: #062925;
-    border: 0;
+  .btn:hover { text-decoration: none; }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-text);
   }
-  .primary:hover { background: var(--teal-soft); color: #062925; }
-  .ghost {
-    background: transparent;
-    color: var(--ink);
-    border: 1px solid var(--line);
+  .btn-primary:hover { background: var(--accent-hover); color: var(--accent-text); }
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--line);
   }
-  .ghost:hover { border-color: var(--teal); color: var(--teal-soft); }
-  .ghost svg { width: 16px; height: 16px; fill: currentColor; }
+  .btn-secondary:hover { border-color: var(--muted); }
+  .btn svg { width: 15px; height: 15px; fill: currentColor; }
+
   .detected {
-    margin: 14px 0 0;
-    color: var(--muted-2);
-    font-size: 14px;
+    margin: 12px 0 0;
+    color: var(--muted);
+    font-size: 13px;
   }
   .missing {
-    margin: 16px 0 0;
+    margin: 14px 0 0;
     padding: 12px 14px;
+    background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 10px;
-    background: var(--panel);
     color: var(--muted);
-    max-width: 52ch;
+    font-size: 14px;
+    max-width: 42ch;
   }
   .missing[hidden] { display: none; }
 
-  .shot {
-    margin: 40px auto 0;
-    max-width: 420px;
-    border-radius: 16px;
-    overflow: hidden;
+  .hero-visual {
+    background: var(--surface);
     border: 1px solid var(--line);
-    box-shadow: 0 40px 80px -36px rgba(0,0,0,.7);
-    background: #111;
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
   }
-  .shot img {
+  .hero-visual img {
     display: block;
     width: 100%;
     height: auto;
   }
-  .shot-cap {
-    margin: 10px auto 0;
-    max-width: 420px;
-    color: var(--muted-2);
-    font-size: 13px;
-  }
 
-  h2 {
-    font-size: clamp(22px, 3vw, 28px);
-    font-weight: 750;
-    letter-spacing: -0.02em;
-    margin: 0 0 14px;
-  }
   section { margin-top: 56px; }
+  h2 {
+    margin: 0 0 16px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
 
   .platforms {
     list-style: none;
     margin: 0;
     padding: 0;
+    background: var(--surface);
     border: 1px solid var(--line);
-    border-radius: 14px;
-    background: var(--panel);
+    border-radius: var(--radius);
     overflow: hidden;
   }
   .platforms li {
     display: flex;
     justify-content: space-between;
-    gap: 1rem;
     align-items: center;
-    padding: 16px 18px;
+    gap: 16px;
+    padding: 14px 18px;
     border-top: 1px solid var(--line);
   }
   .platforms li:first-child { border-top: 0; }
-  .platforms .os { font-weight: 600; }
+  .platforms .os { font-weight: 550; }
   .platforms a {
-    color: var(--teal-soft);
-    text-decoration: none;
-    font-weight: 650;
+    font-size: 14px;
+    font-weight: 600;
     white-space: nowrap;
   }
   .platforms a[aria-disabled="true"] {
-    color: var(--muted-2);
+    color: var(--muted);
     font-weight: 400;
     pointer-events: none;
+    text-decoration: none;
   }
 
-  .steps {
+  .facts {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 14px;
-  }
-  .step {
-    background: var(--panel);
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
     border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 18px 18px 16px;
+    border-radius: var(--radius);
+    overflow: hidden;
   }
-  .step n {
-    display: block;
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--teal);
-    margin-bottom: 8px;
+  .facts article {
+    background: var(--surface);
+    padding: 20px 18px;
   }
-  .step p { margin: 0; color: var(--muted); }
-
-  pre {
-    margin: 0;
-    padding: 16px 18px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    overflow-x: auto;
-    font-family: var(--mono);
-    font-size: 13.5px;
-    color: var(--teal-soft);
-  }
-
-  .note {
-    color: var(--muted);
+  .facts h3 {
+    margin: 0 0 6px;
     font-size: 15px;
+    font-weight: 650;
+  }
+  .facts p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  @media (max-width: 700px) {
+    .facts { grid-template-columns: 1fr; }
+  }
+
+  .fineprint {
+    margin: 16px 0 0;
+    color: var(--muted);
+    font-size: 14px;
     max-width: 62ch;
   }
   code {
     font-family: var(--mono);
-    font-size: 0.88em;
-    background: var(--panel);
+    font-size: 0.9em;
+    background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 4px;
-    padding: 0.08em 0.35em;
+    padding: 0.05em 0.35em;
+  }
+  pre {
+    margin: 12px 0 0;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
   }
 
   footer {
-    margin-top: 72px;
-    padding-top: 22px;
-    border-top: 1px solid var(--line);
-    color: var(--muted-2);
-    font-size: 14px;
     display: flex;
     flex-wrap: wrap;
-    gap: 12px 22px;
     justify-content: space-between;
+    gap: 10px 20px;
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 13px;
   }
-  footer a { color: var(--muted); text-decoration: none; }
-  footer a:hover { color: var(--teal-soft); }
+  footer a { color: var(--muted); }
+  footer a:hover { color: var(--text); }
 </style>
 </head>
 <body>
-<div class="wrap">
-
+<div class="page">
   <nav>
     <a class="brand" href="./">
-      <img src="icon.png" width="36" height="36" alt="">
+      <img src="icon.png" width="32" height="32" alt="">
       Rustle
     </a>
     <div class="nav-links">
@@ -292,71 +313,75 @@
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
         GitHub
       </a>
-      <a href="https://github.com/nbarrett/rustle/releases">Releases</a>
       <a href="https://github.com/nbarrett/rustle#readme">Project</a>
     </div>
   </nav>
 
-  <header class="hero">
-    <p class="eyebrow">Local dictation</p>
-    <h1>Hold a key. Talk. The words appear.</h1>
-    <p class="sub">Whisper runs on your machine. Nothing is sent to a server. The grey bar shows what it heard; the text goes into the app you were using.</p>
-    <div class="actions">
-      <a class="primary" id="primary" href="https://github.com/nbarrett/rustle/releases/latest">Download</a>
-      <a class="ghost" href="https://github.com/nbarrett/rustle">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
-        View source on GitHub
-      </a>
+  <div class="hero">
+    <div>
+      <h1>On-device dictation for the app you are already in.</h1>
+      <p class="lede">Hold a key, speak, release. Whisper transcribes on this computer. The words appear in the front app, not in a website.</p>
+      <div class="actions">
+        <a class="btn btn-primary" id="primary" href="https://github.com/nbarrett/rustle/releases/latest">Download</a>
+        <a class="btn btn-secondary" href="https://github.com/nbarrett/rustle">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+          Source on GitHub
+        </a>
+      </div>
+      <p class="detected" id="detected"></p>
+      <p class="missing" id="missing" hidden>
+        A build for this computer is not on the latest release yet. Choose another platform below, or run from source.
+      </p>
     </div>
-    <p class="detected" id="detected"></p>
-    <p class="missing" id="missing" hidden>
-      A build for this computer is not on the latest release yet. Use another file below, or run it from source.
-    </p>
-  </header>
-
-  <figure class="shot">
-    <img src="settings.jpg" width="720" height="2002" alt="The Rustle settings window: live transcript, Globe push-to-talk key, microphone, Whisper model, and word corrections.">
-  </figure>
-  <p class="shot-cap">The settings window. Words go into the app you were using, not into this panel.</p>
+    <div class="hero-visual">
+      <img src="settings.jpg" width="720" height="2002" alt="Rustle settings: live transcript, Globe push-to-talk key, microphone, Whisper model and word corrections.">
+    </div>
+  </div>
 
   <section>
-    <h2>Download for your computer</h2>
+    <h2>Also available</h2>
     <ul class="platforms" id="platforms"></ul>
   </section>
 
   <section>
-    <h2>How it works</h2>
-    <div class="steps">
-      <div class="step"><n>01</n><p>Hold the push-to-talk key. The grey bar shows Listening.</p></div>
-      <div class="step"><n>02</n><p>Speak. Whisper transcribes on this machine.</p></div>
-      <div class="step"><n>03</n><p>Release. The words appear in the front app.</p></div>
+    <h2>What you get</h2>
+    <div class="facts">
+      <article>
+        <h3>Stays on the machine</h3>
+        <p>Audio is transcribed by Whisper locally. There is no account and no cloud API.</p>
+      </article>
+      <article>
+        <h3>Types into the front app</h3>
+        <p>macOS, Windows and Linux. A menu-bar or tray app, not a web form.</p>
+      </article>
+      <article>
+        <h3>Yours to keep</h3>
+        <p>MIT licensed. Models download in the app. Corrections are a plain list you edit.</p>
+      </article>
     </div>
-    <p class="note" style="margin-top:18px;">
-      macOS: right-click the app and choose Open (it is not from the App Store). Grant Microphone, Input Monitoring and Accessibility, then quit and reopen.
-      Windows may warn about an unsigned installer.
-      Linux paste needs <code>xdotool</code>, <code>wtype</code> or <code>ydotool</code>.
+    <p class="fineprint">
+      macOS: right-click the app and choose Open, then grant Microphone, Input Monitoring and Accessibility, and quit once. Windows may warn that the installer is unsigned. Linux paste needs <code>xdotool</code>, <code>wtype</code> or <code>ydotool</code>.
     </p>
   </section>
 
   <section>
     <h2>From source</h2>
-    <p class="note">Needs Rust, cmake and Node. Nothing is installed globally, and nothing has to go in <code>/Applications</code>.</p>
+    <p class="fineprint">Rust, cmake and Node. Packages stay in the repo. Nothing needs to go in <code>/Applications</code>.</p>
     <pre>npm install
 npx tauri dev</pre>
   </section>
 
   <footer>
-    <span>MIT. Whisper stays on the machine.</span>
+    <span>MIT licence. Whisper does not leave the computer.</span>
     <span>
       <a href="https://github.com/nbarrett/rustle">GitHub</a>
       ·
       <a href="https://github.com/nbarrett/rustle/releases">Releases</a>
       ·
-      <a href="./">Download</a>
+      <a href="https://github.com/nbarrett/rustle#readme">Project</a>
     </span>
   </footer>
 </div>
-
 <script>
   const OWNER = "nbarrett";
   const REPO = "rustle";
