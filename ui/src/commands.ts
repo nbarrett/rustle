@@ -44,6 +44,10 @@ export function setDictationEnabled(enabled: boolean): Promise<void> {
   return invoke("set_dictation_enabled", { enabled });
 }
 
+export function notifyHotkeyEdge(pressed: boolean): Promise<void> {
+  return invoke("notify_hotkey_edge", { pressed });
+}
+
 export function getDictationEnabled(): Promise<boolean> {
   return invoke("get_dictation_enabled");
 }

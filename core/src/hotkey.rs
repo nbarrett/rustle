@@ -119,15 +119,29 @@ impl HotkeyChoice {
     }
 
     pub fn matches_win_vk(self, vk: u32, extended: bool) -> bool {
+        self.matches_win_key(vk, 0, extended)
+    }
+
+    pub fn matches_win_key(self, vk: u32, scan: u32, extended: bool) -> bool {
         match self.effective() {
             HotkeyChoice::RightControl => {
-                vk == WIN_VK_RCONTROL || (vk == WIN_VK_CONTROL && extended)
+                vk != WIN_VK_LCONTROL
+                    && (vk == WIN_VK_RCONTROL
+                        || (vk == WIN_VK_CONTROL && extended)
+                        || (scan == WIN_SCAN_CTRL && extended))
             }
             HotkeyChoice::RightOption => {
-                vk == WIN_VK_RMENU || (vk == WIN_VK_MENU && extended)
+                vk != WIN_VK_LMENU
+                    && (vk == WIN_VK_RMENU
+                        || (vk == WIN_VK_MENU && extended)
+                        || (scan == WIN_SCAN_ALT && extended))
             }
-            HotkeyChoice::F8 => vk == WIN_VK_F8 || vk == WIN_VK_MEDIA_PLAY_PAUSE,
-            HotkeyChoice::F9 => vk == WIN_VK_F9 || vk == WIN_VK_MEDIA_NEXT_TRACK,
+            HotkeyChoice::F8 => {
+                vk == WIN_VK_F8 || vk == WIN_VK_MEDIA_PLAY_PAUSE || scan == WIN_SCAN_F8
+            }
+            HotkeyChoice::F9 => {
+                vk == WIN_VK_F9 || vk == WIN_VK_MEDIA_NEXT_TRACK || scan == WIN_SCAN_F9
+            }
             HotkeyChoice::Function => false,
         }
     }
@@ -143,13 +157,17 @@ pub(crate) const WIN_VK_F8: u32 = 0x77;
 pub(crate) const WIN_VK_F9: u32 = 0x78;
 pub(crate) const WIN_VK_MEDIA_NEXT_TRACK: u32 = 0xB0;
 pub(crate) const WIN_VK_MEDIA_PLAY_PAUSE: u32 = 0xB3;
+pub(crate) const WIN_SCAN_CTRL: u32 = 0x1D;
+pub(crate) const WIN_SCAN_ALT: u32 = 0x38;
+pub(crate) const WIN_SCAN_F8: u32 = 0x42;
+pub(crate) const WIN_SCAN_F9: u32 = 0x43;
 
 #[cfg(test)]
 mod tests {
     use super::{
-        HotkeyChoice, WIN_VK_CONTROL, WIN_VK_F8, WIN_VK_F9, WIN_VK_LCONTROL, WIN_VK_LMENU,
-        WIN_VK_MEDIA_NEXT_TRACK, WIN_VK_MEDIA_PLAY_PAUSE, WIN_VK_MENU, WIN_VK_RCONTROL,
-        WIN_VK_RMENU,
+        HotkeyChoice, WIN_SCAN_CTRL, WIN_SCAN_F8, WIN_SCAN_F9, WIN_VK_CONTROL, WIN_VK_F8,
+        WIN_VK_F9, WIN_VK_LCONTROL, WIN_VK_LMENU, WIN_VK_MEDIA_NEXT_TRACK,
+        WIN_VK_MEDIA_PLAY_PAUSE, WIN_VK_MENU, WIN_VK_RCONTROL, WIN_VK_RMENU,
     };
 
     #[test]
@@ -206,5 +224,18 @@ mod tests {
         assert!(HotkeyChoice::RightOption.matches_win_vk(WIN_VK_MENU, true));
         assert!(!HotkeyChoice::RightOption.matches_win_vk(WIN_VK_MENU, false));
         assert!(!HotkeyChoice::RightOption.matches_win_vk(WIN_VK_LMENU, false));
+    }
+
+    #[test]
+    fn windows_right_control_matches_extended_ctrl_scan() {
+        assert!(HotkeyChoice::RightControl.matches_win_key(0, WIN_SCAN_CTRL, true));
+        assert!(!HotkeyChoice::RightControl.matches_win_key(0, WIN_SCAN_CTRL, false));
+    }
+
+    #[test]
+    fn windows_f_keys_match_hardware_scan_codes() {
+        assert!(HotkeyChoice::F8.matches_win_key(0, WIN_SCAN_F8, false));
+        assert!(HotkeyChoice::F9.matches_win_key(0, WIN_SCAN_F9, false));
+        assert!(!HotkeyChoice::F8.matches_win_key(0, WIN_SCAN_F9, false));
     }
 }

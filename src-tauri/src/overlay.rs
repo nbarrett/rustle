@@ -275,6 +275,19 @@ fn show_hud(app: &AppHandle, text: &str) {
         "var n=document.getElementById('msg'); if(n) n.textContent={encoded};"
     ));
     position_hud(&hud);
+    show_hud_window(&hud);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_hud_window(hud: &tauri::WebviewWindow) {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(hwnd) = hud.hwnd() {
+            rustle_core::win_insert::prevent_window_activation(hwnd.0 as isize);
+            rustle_core::win_insert::show_without_activating(hwnd.0 as isize);
+            return;
+        }
+    }
     let _ = hud.show();
 }
 

@@ -15,6 +15,7 @@ import {
   listenForMacosSetup,
   listenForModelDownloadProgress,
   macosSetupStatus,
+  notifyHotkeyEdge,
   openAccessibilitySettings,
   requestDictationPermissions,
   readUtf8Path,
@@ -724,6 +725,54 @@ async function refreshSetupStatus(): Promise<void> {
   }
 }
 
+function eventMatchesPushToTalk(event: KeyboardEvent, hotkey: string): boolean {
+  switch (hotkey) {
+    case "F8":
+      return event.code === "F8" || event.key === "F8" || event.key === "MediaPlayPause";
+    case "F9":
+      return event.code === "F9" || event.key === "F9" || event.key === "MediaTrackNext";
+    case "RightControl":
+      return event.code === "ControlRight";
+    case "RightOption":
+      return event.code === "AltRight";
+    default:
+      return false;
+  }
+}
+
+function listenForPushToTalkInThisWindow(): void {
+  if (platformName !== "windows") {
+    return;
+  }
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.repeat) {
+        return;
+      }
+      if (!eventMatchesPushToTalk(event, elements.hotkeySelect.value)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      void notifyHotkeyEdge(true);
+    },
+    true,
+  );
+  window.addEventListener(
+    "keyup",
+    (event) => {
+      if (!eventMatchesPushToTalk(event, elements.hotkeySelect.value)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      void notifyHotkeyEdge(false);
+    },
+    true,
+  );
+}
+
 function applyPlatformCopy(): void {
   document.documentElement.dataset.os = platformName;
   elements.enterCaption.textContent =
@@ -797,6 +846,7 @@ async function initialise(): Promise<void> {
     hotkeyChoices = listedHotkeys;
   }
   applyPlatformCopy();
+  listenForPushToTalkInThisWindow();
   await refreshSetupStatus();
   await listenForMacosSetup(renderSetupStatus);
   elements.setupPermissions.addEventListener("click", () => {

@@ -121,6 +121,15 @@ fn set_dictation_enabled(enabled: bool, app: AppHandle) {
 }
 
 #[tauri::command]
+fn notify_hotkey_edge(pressed: bool, app: AppHandle) {
+    if let Some(state) = app.try_state::<Mutex<EngineState>>() {
+        if let Ok(guard) = state.lock() {
+            guard.engine.notify_hotkey_edge(pressed);
+        }
+    }
+}
+
+#[tauri::command]
 fn get_dictation_enabled(app: AppHandle) -> bool {
     if let Some(state) = app.try_state::<Mutex<EngineState>>() {
         if let Ok(guard) = state.lock() {
@@ -283,10 +292,15 @@ fn create_hud_window(app: &mut tauri::App) {
         .skip_taskbar(true)
         .visible(false)
         .focused(false)
+        .focusable(false)
         .resizable(false)
         .build();
     if let Some(hud) = app.handle().get_webview_window("hud") {
         let _ = hud.set_ignore_cursor_events(true);
+        #[cfg(target_os = "windows")]
+        if let Ok(hwnd) = hud.hwnd() {
+            rustle_core::win_insert::prevent_window_activation(hwnd.0 as isize);
+        }
     }
 }
 
@@ -411,6 +425,7 @@ fn main() {
             list_models,
             set_dictation_enabled,
             get_dictation_enabled,
+            notify_hotkey_edge,
             download_model,
             show_settings_window,
             open_accessibility_settings,

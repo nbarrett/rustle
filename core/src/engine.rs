@@ -38,6 +38,7 @@ enum ControllerCommand {
 pub struct DictationEngine {
     shared_config: Arc<Mutex<Config>>,
     listening_enabled: Arc<AtomicBool>,
+    commands: Sender<ControllerCommand>,
 }
 
 impl DictationEngine {
@@ -60,12 +61,13 @@ impl DictationEngine {
             shared_config.clone(),
             listening_enabled.clone(),
             report_status.clone(),
-            sender,
+            sender.clone(),
         );
 
         Ok(Self {
             shared_config,
             listening_enabled,
+            commands: sender,
         })
     }
 
@@ -83,6 +85,18 @@ impl DictationEngine {
 
     pub fn is_listening_enabled(&self) -> bool {
         self.listening_enabled.load(Ordering::SeqCst)
+    }
+
+    pub fn notify_hotkey_edge(&self, pressed: bool) {
+        if pressed && !self.listening_enabled.load(Ordering::SeqCst) {
+            return;
+        }
+        let command = if pressed {
+            ControllerCommand::StartRecording
+        } else {
+            ControllerCommand::StopRecording
+        };
+        let _ = self.commands.send(command);
     }
 }
 
@@ -304,6 +318,8 @@ fn run_dictation_controller(
                             insert_origin = None;
                             live_ax_insert_works = true;
                             saved_clipboard = read_clipboard_text();
+                            #[cfg(target_os = "windows")]
+                            crate::win_insert::remember_front_window();
                             #[cfg(not(target_os = "macos"))]
                             write_engine_log(&format!(
                                 "insert target={}",
@@ -352,7 +368,7 @@ fn run_dictation_controller(
                     if let Some(saved) = silenced_output.take() {
                         crate::output::restore_system_output(saved);
                     }
-                    if let Err(error) = transcribe_and_type(
+                    let typed = transcribe_and_type(
                         active,
                         &shared_config,
                         &mut loaded_model,
@@ -361,7 +377,10 @@ fn run_dictation_controller(
                         #[cfg(target_os = "macos")]
                         insert_target.as_ref(),
                         report_status.as_ref(),
-                    ) {
+                    );
+                    #[cfg(target_os = "windows")]
+                    crate::win_insert::forget_front_window();
+                    if let Err(error) = typed {
                         write_engine_log(&format!("final insert failed: {error}"));
                         report_insert_problem(report_status.as_ref(), &error);
                     }
