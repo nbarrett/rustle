@@ -137,8 +137,12 @@ pub fn install_into_applications_and_relaunch(app: &AppHandle) -> Result<(), Str
 }
 
 pub fn follow_permission_grants_and_relaunch(app: AppHandle) {
-    thread::spawn(move || {
+    let prompt_app = app.clone();
+    let _ = prompt_app.run_on_main_thread(|| {
         request_dictation_permissions();
+    });
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(200));
         let initial = current_setup_status();
         if !initial.listen || !initial.accessibility {
             open_dictation_permission_settings();

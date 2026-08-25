@@ -3,6 +3,9 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::{Arc, Mutex};
 
 pub const WHISPER_SAMPLE_RATE: u32 = 16_000;
+const SPEECH_RMS_MINIMUM: f32 = 0.012;
+const SPEECH_PEAK_MINIMUM: f32 = 0.04;
+const QUIET_EDGE_PAD_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize / 5;
 
 pub struct ActiveRecording {
     stream: cpal::Stream,
@@ -114,6 +117,42 @@ pub fn stop_recording(active: ActiveRecording) -> (Vec<f32>, u32, u16) {
     (captured, sample_rate, channels)
 }
 
+pub fn root_mean_square_amplitude(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_of_squares: f32 = samples.iter().map(|sample| sample * sample).sum();
+    (sum_of_squares / samples.len() as f32).sqrt()
+}
+
+pub fn clip_is_quieter_than_speech(samples: &[f32]) -> bool {
+    root_mean_square_amplitude(samples) < SPEECH_RMS_MINIMUM
+}
+
+pub fn clip_has_a_speech_peak(samples: &[f32]) -> bool {
+    samples
+        .iter()
+        .any(|sample| sample.abs() >= SPEECH_PEAK_MINIMUM)
+}
+
+pub fn trim_quiet_edges(samples: &[f32]) -> &[f32] {
+    let Some(first) = samples
+        .iter()
+        .position(|sample| sample.abs() >= SPEECH_PEAK_MINIMUM)
+    else {
+        return samples;
+    };
+    let Some(last) = samples
+        .iter()
+        .rposition(|sample| sample.abs() >= SPEECH_PEAK_MINIMUM)
+    else {
+        return samples;
+    };
+    let start = first.saturating_sub(QUIET_EDGE_PAD_SAMPLES);
+    let end = (last + 1).saturating_add(QUIET_EDGE_PAD_SAMPLES).min(samples.len());
+    &samples[start..end]
+}
+
 pub fn downmix_to_mono(interleaved_samples: &[f32], channels: u16) -> Vec<f32> {
     if channels <= 1 {
         return interleaved_samples.to_vec();
@@ -142,4 +181,41 @@ pub fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> 
             lower_sample + (upper_sample - lower_sample) * fraction
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        clip_has_a_speech_peak, clip_is_quieter_than_speech, root_mean_square_amplitude,
+        trim_quiet_edges,
+    };
+
+    #[test]
+    fn silence_is_quieter_than_speech() {
+        let silence = [0.0f32; 1600];
+        assert!(clip_is_quieter_than_speech(&silence));
+        assert!(!clip_has_a_speech_peak(&silence));
+        assert_eq!(root_mean_square_amplitude(&silence), 0.0);
+    }
+
+    #[test]
+    fn a_short_word_still_has_a_speech_peak() {
+        let mut clip = vec![0.0f32; 16000];
+        for sample in &mut clip[8000..8600] {
+            *sample = 0.2;
+        }
+        assert!(clip_has_a_speech_peak(&clip));
+    }
+
+    #[test]
+    fn trim_quiet_edges_keeps_the_last_spoken_peak() {
+        let mut clip = vec![0.0f32; 16000];
+        for sample in &mut clip[2000..2600] {
+            *sample = 0.2;
+        }
+        let trimmed = trim_quiet_edges(&clip);
+        assert!(trimmed.len() < clip.len());
+        assert!(trimmed.iter().any(|sample| *sample == 0.2));
+        assert_eq!(trimmed[trimmed.len() - 1], 0.0);
+    }
 }

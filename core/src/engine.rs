@@ -7,15 +7,18 @@ use std::time::Duration;
 
 const LIVE_TRANSCRIPTION_INTERVAL: Duration = Duration::from_millis(450);
 const LIVE_TRANSCRIPT_MINIMUM_SECONDS: f32 = 0.35;
+const FINAL_TRANSCRIPT_MINIMUM_SECONDS: f32 = 0.2;
 const CLIPBOARD_SETTLE: Duration = Duration::from_millis(50);
 const CLIPBOARD_RESTORE_AFTER_PASTE: Duration = Duration::from_millis(800);
 
 use crate::audio::{
-    downmix_to_mono, resample_linear, start_recording, stop_recording, ActiveRecording,
-    WHISPER_SAMPLE_RATE,
+    clip_has_a_speech_peak, clip_is_quieter_than_speech, downmix_to_mono, resample_linear,
+    start_recording, stop_recording, trim_quiet_edges, ActiveRecording, WHISPER_SAMPLE_RATE,
 };
 use crate::config::{apply_corrections, resolve_model_path, Config, Correction};
-use crate::transcribe::WhisperTranscriber;
+use crate::transcribe::{
+    final_pass_threw_away_the_spoken_words, transcript_is_a_whisper_blank_phrase, WhisperTranscriber,
+};
 use crate::uk_english::apply_locale_english_spelling;
 
 #[derive(Clone, Debug)]
@@ -413,6 +416,17 @@ fn run_dictation_controller(
     }
 }
 
+fn should_skip_typing(audio: &[f32], spoken: &str) -> bool {
+    if spoken.is_empty() {
+        return true;
+    }
+    let minimum_samples = (WHISPER_SAMPLE_RATE as f32 * FINAL_TRANSCRIPT_MINIMUM_SECONDS) as usize;
+    if audio.len() < minimum_samples {
+        return true;
+    }
+    clip_is_quieter_than_speech(audio) && !clip_has_a_speech_peak(audio)
+}
+
 fn transcribe_current_buffer(
     active: &ActiveRecording,
     loaded_model: &Option<(String, WhisperTranscriber)>,
@@ -426,16 +440,19 @@ fn transcribe_current_buffer(
         return None;
     }
     let mono = downmix_to_mono(&captured, active.channels());
-    let audio = resample_linear(&mono, active.sample_rate(), WHISPER_SAMPLE_RATE);
-    let transcript = transcriber.transcribe(&audio).ok()?;
+    let resampled = resample_linear(&mono, active.sample_rate(), WHISPER_SAMPLE_RATE);
+    let audio = trim_quiet_edges(&resampled);
+    let transcript = transcriber.transcribe(audio).ok()?;
     let regional = apply_locale_english_spelling(transcript.trim());
     let corrected = apply_corrections(&regional, corrections);
     let trimmed = corrected.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
+    if should_skip_typing(audio, trimmed) {
+        return None;
     }
+    if transcript_is_a_whisper_blank_phrase(trimmed) {
+        return None;
+    }
+    Some(trimmed.to_string())
 }
 
 fn transcribe_and_type(
@@ -449,7 +466,8 @@ fn transcribe_and_type(
 ) -> Result<()> {
     let (samples, sample_rate, channels) = stop_recording(active);
     let mono = downmix_to_mono(&samples, channels);
-    let audio = resample_linear(&mono, sample_rate, WHISPER_SAMPLE_RATE);
+    let resampled = resample_linear(&mono, sample_rate, WHISPER_SAMPLE_RATE);
+    let audio = trim_quiet_edges(&resampled).to_vec();
 
     report_status(DictationStatus::Transcribing);
 
@@ -463,6 +481,30 @@ fn transcribe_and_type(
     let regional = apply_locale_english_spelling(raw_transcript.trim());
     let corrected = apply_corrections(&regional, &config.corrections);
     let spoken = corrected.trim();
+
+    if already_inserted.is_empty()
+        && (should_skip_typing(&audio, spoken) || transcript_is_a_whisper_blank_phrase(spoken))
+    {
+        write_engine_log(&format!(
+            "transcript discarded spoken={spoken:?} rms={}",
+            crate::audio::root_mean_square_amplitude(&audio)
+        ));
+        report_status(DictationStatus::Idle);
+        return Ok(());
+    }
+
+    let spoken = if final_pass_threw_away_the_spoken_words(already_inserted, spoken) {
+        write_engine_log(&format!(
+            "kept live transcript; final pass was {spoken:?}"
+        ));
+        already_inserted
+    } else if spoken.is_empty() {
+        already_inserted
+    } else if transcript_is_a_whisper_blank_phrase(spoken) && !already_inserted.is_empty() {
+        already_inserted
+    } else {
+        spoken
+    };
 
     if spoken.is_empty() {
         report_status(DictationStatus::Idle);

@@ -19,8 +19,28 @@ struct CFRange {
     length: isize,
 }
 
+#[repr(C)]
+struct CfDictionaryKeyCallBacks {
+    version: isize,
+    retain: *const c_void,
+    release: *const c_void,
+    copy_description: *const c_void,
+    equal: *const c_void,
+    hash: *const c_void,
+}
+
+#[repr(C)]
+struct CfDictionaryValueCallBacks {
+    version: isize,
+    retain: *const c_void,
+    release: *const c_void,
+    copy_description: *const c_void,
+    equal: *const c_void,
+}
+
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
+    static kAXTrustedCheckOptionPrompt: CFStringRef;
     fn AXIsProcessTrusted() -> bool;
     fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> bool;
     fn AXUIElementCreateSystemWide() -> AXUIElementRef;
@@ -41,6 +61,8 @@ extern "C" {
 #[link(name = "CoreFoundation", kind = "framework")]
 extern "C" {
     static kCFBooleanTrue: CFTypeRef;
+    static kCFTypeDictionaryKeyCallBacks: CfDictionaryKeyCallBacks;
+    static kCFTypeDictionaryValueCallBacks: CfDictionaryValueCallBacks;
     fn CFStringCreateWithBytes(
         allocator: *const c_void,
         bytes: *const u8,
@@ -59,35 +81,27 @@ extern "C" {
     fn CFRelease(cf: CFTypeRef);
 }
 
-fn cf_boolean_true() -> CFTypeRef {
-    unsafe { kCFBooleanTrue }
-}
-
 pub fn process_is_trusted() -> bool {
     unsafe { AXIsProcessTrusted() }
 }
 
 pub fn request_accessibility_prompt() -> bool {
     unsafe {
-        let key = cf_string("AXTrustedCheckOptionPrompt");
-        let keys = [key as CFTypeRef];
-        let values = [cf_boolean_true()];
+        let keys = [kAXTrustedCheckOptionPrompt as CFTypeRef];
+        let values = [kCFBooleanTrue];
         let options = CFDictionaryCreate(
             ptr::null(),
             keys.as_ptr(),
             values.as_ptr(),
             1,
-            ptr::null(),
-            ptr::null(),
+            &kCFTypeDictionaryKeyCallBacks as *const CfDictionaryKeyCallBacks as *const c_void,
+            &kCFTypeDictionaryValueCallBacks as *const CfDictionaryValueCallBacks as *const c_void,
         );
-        let trusted = if options.is_null() {
-            AXIsProcessTrusted()
-        } else {
-            let trusted = AXIsProcessTrustedWithOptions(options);
-            CFRelease(options);
-            trusted
-        };
-        CFRelease(key);
+        if options.is_null() {
+            return AXIsProcessTrusted();
+        }
+        let trusted = AXIsProcessTrustedWithOptions(options);
+        CFRelease(options);
         trusted
     }
 }
