@@ -129,7 +129,39 @@ fn spawn_hotkey_listener(
     });
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn spawn_hotkey_listener(
+    shared_config: Arc<Mutex<Config>>,
+    listening_enabled: Arc<AtomicBool>,
+    report_status: Arc<dyn Fn(DictationStatus) + Send + Sync>,
+    sender: Sender<ControllerCommand>,
+) {
+    use crate::hotkey::HotkeyEdge;
+    thread::spawn(move || {
+        write_engine_log("windows hotkey listener starting");
+        match crate::win_hotkey::run_hotkey_listener(
+            shared_config,
+            listening_enabled,
+            Box::new(move |edge| {
+                let command = match edge {
+                    HotkeyEdge::Press => ControllerCommand::StartRecording,
+                    HotkeyEdge::Release => ControllerCommand::StopRecording,
+                };
+                let _ = sender.send(command);
+            }),
+        ) {
+            Ok(()) => write_engine_log("windows hotkey listener ended"),
+            Err(error) => {
+                write_engine_log(&format!("hotkey listener failed: {error}"));
+                report_status(DictationStatus::NeedsPermission(
+                    "Rustle could not listen for the push-to-talk key.".to_string(),
+                ));
+            }
+        }
+    });
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 fn spawn_hotkey_listener(
     shared_config: Arc<Mutex<Config>>,
     listening_enabled: Arc<AtomicBool>,

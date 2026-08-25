@@ -1,6 +1,7 @@
 pub mod config;
 pub mod download;
 pub mod hotkey;
+pub mod install_location;
 
 #[cfg(feature = "runtime")]
 pub mod audio;
@@ -22,8 +23,10 @@ pub mod mac_hotkey;
 pub mod mac_output;
 #[cfg(all(feature = "runtime", target_os = "macos"))]
 pub mod mac_paste;
-#[cfg(all(feature = "runtime", not(target_os = "macos")))]
+#[cfg(all(feature = "runtime", target_os = "linux"))]
 pub mod rdev_hotkey;
+#[cfg(all(feature = "runtime", target_os = "windows"))]
+pub mod win_hotkey;
 #[cfg(all(feature = "runtime", target_os = "windows"))]
 pub mod win_insert;
 #[cfg(all(feature = "runtime", target_os = "windows"))]

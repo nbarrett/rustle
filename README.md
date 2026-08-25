@@ -33,7 +33,11 @@ On a Mac, live words can appear as you speak. On Windows and Linux, the grey HUD
 
 ## Permissions (one time)
 
-**macOS** — System Settings → Privacy & Security:
+**macOS** — first launch copies Rustle into Applications if you opened it from the DMG, then a setup panel asks for Input Monitoring and Accessibility. Turn those switches on; Rustle restarts itself when they are granted.
+
+The GitHub download is not Apple-notarised yet (that needs a Developer ID certificate). If macOS shows **Open Anyway**, use it once for that copy.
+
+Then System Settings → Privacy & Security:
 
 - **Accessibility** - to type into the focused app
 - **Input Monitoring** - to hear the global hotkey

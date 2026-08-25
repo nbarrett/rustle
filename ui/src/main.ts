@@ -7,12 +7,16 @@ import {
   getConfig,
   getDictationEnabled,
   hostPlatform,
+  installIntoApplications,
   listHotkeyChoices,
   listMicrophones,
   listModels,
   listenForDictationStatus,
+  listenForMacosSetup,
   listenForModelDownloadProgress,
+  macosSetupStatus,
   openAccessibilitySettings,
+  requestDictationPermissions,
   readUtf8Path,
   relaunchApp,
   resizeSettingsWindow,
@@ -29,6 +33,7 @@ import type {
   HistoryEntry,
   HotkeyChoice,
   HotkeyOption,
+  MacosSetupStatus,
   ModelChoice,
 } from "./types";
 
@@ -67,6 +72,7 @@ const elements = {
   dictationToggle: requiredElement<HTMLInputElement>("dictation-toggle"),
   dictationCaption: requiredElement<HTMLSpanElement>("dictation-caption"),
   hotkeySelect: requiredElement<HTMLSelectElement>("hotkey-select"),
+  hotkeyHint: requiredElement<HTMLParagraphElement>("hotkey-hint"),
   microphoneSelect: requiredElement<HTMLSelectElement>("microphone-select"),
   modelSelect: requiredElement<HTMLSelectElement>("model-select"),
   modelDownload: requiredElement<HTMLButtonElement>("model-download"),
@@ -92,6 +98,11 @@ const elements = {
   insertBanner: requiredElement<HTMLDivElement>("insert-banner"),
   insertNote: requiredElement<HTMLParagraphElement>("insert-note"),
   openAccessibility: requiredElement<HTMLButtonElement>("open-accessibility"),
+  setupBanner: requiredElement<HTMLDivElement>("setup-banner"),
+  setupNote: requiredElement<HTMLParagraphElement>("setup-note"),
+  setupList: requiredElement<HTMLUListElement>("setup-list"),
+  setupPermissions: requiredElement<HTMLButtonElement>("setup-permissions"),
+  setupInstall: requiredElement<HTMLButtonElement>("setup-install"),
   updateBanner: requiredElement<HTMLDivElement>("update-banner"),
   updateNote: requiredElement<HTMLParagraphElement>("update-note"),
   installUpdate: requiredElement<HTMLButtonElement>("install-update"),
@@ -617,7 +628,7 @@ function applyStatusEvent(payload: DictationStatusEvent): void {
   }
 }
 
-async function saveSettings(): Promise<void> {
+async function saveSettings(hideWindow = true): Promise<void> {
   const microphoneValue = elements.microphoneSelect.value;
   const chosenModel = selectedModel();
   const installedFallback =
@@ -647,8 +658,10 @@ async function saveSettings(): Promise<void> {
 
   elements.saveButton.disabled = true;
   try {
-    await saveAndApplyConfig(config);
-    elements.saveNote.textContent = "Saved.";
+    await saveAndApplyConfig(config, hideWindow);
+    elements.saveNote.textContent = hideWindow
+      ? "Saved."
+      : `Using ${elements.hotkeySelect.selectedOptions[0]?.textContent ?? "that key"}.`;
   } catch (error) {
     elements.saveNote.textContent = `Could not save: ${String(error)}`;
   } finally {
@@ -669,6 +682,48 @@ function setUpTabs(): void {
   });
 }
 
+function renderSetupStatus(status: MacosSetupStatus): void {
+  if (platformName !== "macos") {
+    elements.setupBanner.hidden = true;
+    return;
+  }
+  const ready = status.in_applications && status.listen && status.accessibility;
+  elements.setupBanner.hidden = ready;
+  elements.setupInstall.hidden = status.in_applications;
+  const rows: Array<[boolean, string]> = [
+    [status.in_applications, "Installed in Applications"],
+    [status.listen, "Input Monitoring: hears the hotkey in other apps"],
+    [status.accessibility, "Accessibility: types into the app you are using"],
+  ];
+  elements.setupList.replaceChildren();
+  for (const [ok, label] of rows) {
+    const item = document.createElement("li");
+    item.textContent = `${ok ? "On" : "Needs setup"}: ${label}`;
+    elements.setupList.appendChild(item);
+  }
+  if (ready) {
+    elements.setupNote.textContent = "Setup is complete.";
+  } else if (status.listen && status.accessibility) {
+    elements.setupNote.textContent = "Permissions are on. Restarting…";
+  } else {
+    elements.setupNote.textContent =
+      "Turn on the switches macOS shows, then wait. Rustle will restart itself.";
+  }
+  fitWindowToContent();
+}
+
+async function refreshSetupStatus(): Promise<void> {
+  if (platformName !== "macos") {
+    elements.setupBanner.hidden = true;
+    return;
+  }
+  try {
+    renderSetupStatus(await macosSetupStatus());
+  } catch {
+    elements.setupBanner.hidden = true;
+  }
+}
+
 function applyPlatformCopy(): void {
   document.documentElement.dataset.os = platformName;
   elements.enterCaption.textContent =
@@ -681,6 +736,10 @@ function applyPlatformCopy(): void {
       : platformName === "windows"
         ? "Open microphone settings"
         : "Open system settings";
+  elements.hotkeyHint.textContent =
+    platformName === "windows"
+      ? "Hold to talk, release to type. On a Mac keyboard use Fn with F8 or F9. Parallels captures Right Control as its host key, so pick Right Alt or F9 there."
+      : "Hold to talk, release to type into the focused app.";
 }
 
 async function checkForAvailableUpdate(): Promise<void> {
@@ -738,6 +797,21 @@ async function initialise(): Promise<void> {
     hotkeyChoices = listedHotkeys;
   }
   applyPlatformCopy();
+  await refreshSetupStatus();
+  await listenForMacosSetup(renderSetupStatus);
+  elements.setupPermissions.addEventListener("click", () => {
+    void requestDictationPermissions();
+  });
+  elements.setupInstall.addEventListener("click", () => {
+    void installIntoApplications().catch((error) => {
+      elements.setupNote.textContent = `Could not install: ${String(error)}`;
+    });
+  });
+  if (platformName === "macos") {
+    window.setInterval(() => {
+      void refreshSetupStatus();
+    }, 1500);
+  }
   populateHotkeys(hotkeyChoices[0]?.value ?? "RightControl");
   const config = await getConfig().catch(fallbackConfig);
   selectedModelFileName = config.model_file_name;
@@ -812,6 +886,9 @@ async function initialise(): Promise<void> {
     })();
   });
 
+  elements.hotkeySelect.addEventListener("change", () => {
+    void saveSettings(false);
+  });
   elements.saveButton.addEventListener("click", () => {
     void saveSettings();
   });

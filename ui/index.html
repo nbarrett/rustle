@@ -22,6 +22,15 @@
 
       <div class="body">
         <section class="tab-panel is-active" id="panel-dictation">
+          <div id="setup-banner" class="setup-banner" hidden>
+            <p class="field-label">Finish setup</p>
+            <p class="field-hint" id="setup-note">Rustle needs a couple of Mac permissions before it can type into other apps.</p>
+            <ul id="setup-list" class="setup-list"></ul>
+            <div class="inline-row corrections-actions">
+              <button id="setup-permissions" class="primary" type="button">Grant permissions</button>
+              <button id="setup-install" class="secondary" type="button" hidden>Move to Applications</button>
+            </div>
+          </div>
           <div class="field">
             <span class="field-label">Live transcript</span>
             <textarea
@@ -50,7 +59,7 @@
               <option value="F8">F8</option>
               <option value="F9">F9</option>
             </select>
-            <p class="field-hint">Hold to talk, release to type into the focused app.</p>
+            <p class="field-hint" id="hotkey-hint">Hold to talk, release to type into the focused app.</p>
           </div>
 
           <div class="field">

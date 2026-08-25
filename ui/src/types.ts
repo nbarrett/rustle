@@ -52,3 +52,9 @@ export type HotkeyOption = {
   value: HotkeyChoice;
   label: string;
 };
+
+export type MacosSetupStatus = {
+  in_applications: boolean;
+  listen: boolean;
+  accessibility: boolean;
+};

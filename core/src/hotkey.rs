@@ -42,7 +42,7 @@ impl HotkeyChoice {
         if cfg!(target_os = "macos") {
             HotkeyChoice::Function
         } else {
-            HotkeyChoice::RightControl
+            HotkeyChoice::F8
         }
     }
 
@@ -117,11 +117,40 @@ impl HotkeyChoice {
             _ => 0,
         }
     }
+
+    pub fn matches_win_vk(self, vk: u32, extended: bool) -> bool {
+        match self.effective() {
+            HotkeyChoice::RightControl => {
+                vk == WIN_VK_RCONTROL || (vk == WIN_VK_CONTROL && extended)
+            }
+            HotkeyChoice::RightOption => {
+                vk == WIN_VK_RMENU || (vk == WIN_VK_MENU && extended)
+            }
+            HotkeyChoice::F8 => vk == WIN_VK_F8 || vk == WIN_VK_MEDIA_PLAY_PAUSE,
+            HotkeyChoice::F9 => vk == WIN_VK_F9 || vk == WIN_VK_MEDIA_NEXT_TRACK,
+            HotkeyChoice::Function => false,
+        }
+    }
 }
+
+pub(crate) const WIN_VK_CONTROL: u32 = 0x11;
+pub(crate) const WIN_VK_MENU: u32 = 0x12;
+pub(crate) const WIN_VK_LCONTROL: u32 = 0xA2;
+pub(crate) const WIN_VK_RCONTROL: u32 = 0xA3;
+pub(crate) const WIN_VK_LMENU: u32 = 0xA4;
+pub(crate) const WIN_VK_RMENU: u32 = 0xA5;
+pub(crate) const WIN_VK_F8: u32 = 0x77;
+pub(crate) const WIN_VK_F9: u32 = 0x78;
+pub(crate) const WIN_VK_MEDIA_NEXT_TRACK: u32 = 0xB0;
+pub(crate) const WIN_VK_MEDIA_PLAY_PAUSE: u32 = 0xB3;
 
 #[cfg(test)]
 mod tests {
-    use super::HotkeyChoice;
+    use super::{
+        HotkeyChoice, WIN_VK_CONTROL, WIN_VK_F8, WIN_VK_F9, WIN_VK_LCONTROL, WIN_VK_LMENU,
+        WIN_VK_MEDIA_NEXT_TRACK, WIN_VK_MEDIA_PLAY_PAUSE, WIN_VK_MENU, WIN_VK_RCONTROL,
+        WIN_VK_RMENU,
+    };
 
     #[test]
     fn right_option_accepts_either_option_key() {
@@ -145,7 +174,37 @@ mod tests {
         if cfg!(target_os = "macos") {
             assert_eq!(HotkeyChoice::Function.effective(), HotkeyChoice::Function);
         } else {
-            assert_eq!(HotkeyChoice::Function.effective(), HotkeyChoice::RightControl);
+            assert_eq!(HotkeyChoice::Function.effective(), HotkeyChoice::F8);
         }
+    }
+
+    #[test]
+    fn windows_f8_accepts_the_mac_keyboard_media_key() {
+        assert!(HotkeyChoice::F8.matches_win_vk(WIN_VK_F8, false));
+        assert!(HotkeyChoice::F8.matches_win_vk(WIN_VK_MEDIA_PLAY_PAUSE, false));
+        assert!(!HotkeyChoice::F8.matches_win_vk(WIN_VK_F9, false));
+    }
+
+    #[test]
+    fn windows_f9_accepts_media_next_track() {
+        assert!(HotkeyChoice::F9.matches_win_vk(WIN_VK_F9, false));
+        assert!(HotkeyChoice::F9.matches_win_vk(WIN_VK_MEDIA_NEXT_TRACK, false));
+        assert!(!HotkeyChoice::F9.matches_win_vk(WIN_VK_F8, false));
+    }
+
+    #[test]
+    fn windows_right_control_ignores_left_control() {
+        assert!(HotkeyChoice::RightControl.matches_win_vk(WIN_VK_RCONTROL, false));
+        assert!(HotkeyChoice::RightControl.matches_win_vk(WIN_VK_CONTROL, true));
+        assert!(!HotkeyChoice::RightControl.matches_win_vk(WIN_VK_CONTROL, false));
+        assert!(!HotkeyChoice::RightControl.matches_win_vk(WIN_VK_LCONTROL, false));
+    }
+
+    #[test]
+    fn windows_right_alt_ignores_left_alt() {
+        assert!(HotkeyChoice::RightOption.matches_win_vk(WIN_VK_RMENU, false));
+        assert!(HotkeyChoice::RightOption.matches_win_vk(WIN_VK_MENU, true));
+        assert!(!HotkeyChoice::RightOption.matches_win_vk(WIN_VK_MENU, false));
+        assert!(!HotkeyChoice::RightOption.matches_win_vk(WIN_VK_LMENU, false));
     }
 }

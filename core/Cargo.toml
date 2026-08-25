@@ -1,6 +1,6 @@
 [package]
 name = "rustle-core"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 license = "MIT"
 description = "Reusable dictation core for Rustle: config, audio capture, Whisper transcription, hotkey listening and keystroke injection."
@@ -39,7 +39,7 @@ objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
 dispatch2 = "0.3"
 
-[target.'cfg(not(target_os = "macos"))'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 rdev = "0.5"
 
 [target.'cfg(windows)'.dependencies]

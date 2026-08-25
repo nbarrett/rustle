@@ -8,6 +8,7 @@ import type {
   DictationStatusEvent,
   HotkeyOption,
   ModelChoice,
+  MacosSetupStatus,
   ModelDownloadProgress,
 } from "./types";
 
@@ -55,8 +56,28 @@ export function openAccessibilitySettings(): Promise<void> {
   return invoke("open_accessibility_settings");
 }
 
+export function macosSetupStatus(): Promise<MacosSetupStatus> {
+  return invoke("macos_setup_status");
+}
+
+export function installIntoApplications(): Promise<void> {
+  return invoke("install_into_applications");
+}
+
+export function requestDictationPermissions(): Promise<void> {
+  return invoke("request_dictation_permissions");
+}
+
 export function resizeSettingsWindow(contentHeight: number): Promise<void> {
   return invoke("resize_settings_window", { contentHeight });
+}
+
+export function listenForMacosSetup(
+  onEvent: (status: MacosSetupStatus) => void,
+): Promise<UnlistenFn> {
+  return listen<MacosSetupStatus>("macos-setup", (event) => {
+    onEvent(event.payload);
+  });
 }
 
 export function listenForDictationStatus(

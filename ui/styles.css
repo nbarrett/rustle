@@ -471,6 +471,26 @@ html[data-os="linux"] select {
   gap: 8px;
 }
 
+.setup-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--pill-work-bg);
+}
+
+.setup-banner[hidden] {
+  display: none;
+}
+
+.setup-list {
+  margin: 0;
+  padding-left: 1.1em;
+  font-size: 13px;
+  color: var(--pill-work-text);
+}
+
 .insert-banner {
   display: flex;
   flex-direction: column;

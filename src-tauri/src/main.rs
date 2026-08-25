@@ -17,6 +17,8 @@ use tauri_plugin_autostart::{AutoLaunchManager, MacosLauncher};
 const LAUNCHED_AT_LOGIN_ARGUMENT: &str = "--launched-at-login";
 
 mod overlay;
+#[cfg(target_os = "macos")]
+mod mac_setup;
 
 use overlay::DictationOverlay;
 
@@ -169,6 +171,50 @@ fn host_platform() -> String {
 }
 
 #[tauri::command]
+fn macos_setup_status() -> serde_json::Value {
+    #[cfg(target_os = "macos")]
+    {
+        serde_json::to_value(mac_setup::current_setup_status()).unwrap_or_else(|_| {
+            serde_json::json!({
+                "in_applications": false,
+                "listen": false,
+                "accessibility": false
+            })
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        serde_json::json!({
+            "in_applications": true,
+            "listen": true,
+            "accessibility": true
+        })
+    }
+}
+
+#[tauri::command]
+fn install_into_applications(app: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        mac_setup::install_into_applications_and_relaunch(&app)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn request_dictation_permissions() {
+    #[cfg(target_os = "macos")]
+    {
+        mac_setup::request_dictation_permissions();
+        mac_setup::open_dictation_permission_settings();
+    }
+}
+
+#[tauri::command]
 fn write_utf8_path(path: String, contents: String) -> Result<(), String> {
     std::fs::write(path, contents).map_err(|error| error.to_string())
 }
@@ -182,12 +228,7 @@ fn read_utf8_path(path: String) -> Result<String, String> {
 fn open_accessibility_settings() {
     #[cfg(target_os = "macos")]
     {
-        let _ = std::process::Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")
-            .status();
-        let _ = std::process::Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-            .status();
+        mac_setup::open_dictation_permission_settings();
     }
     #[cfg(target_os = "windows")]
     {
@@ -249,7 +290,7 @@ fn create_hud_window(app: &mut tauri::App) {
     }
 }
 
-fn reveal_settings_window(app: &AppHandle) {
+pub(crate) fn reveal_settings_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.unminimize();
         let _ = window.show();
@@ -312,6 +353,17 @@ fn main() {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 let _ = app.handle().set_dock_visibility(false);
             }
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(bundle) = mac_setup::running_app_bundle_path() {
+                    if rustle_core::install_location::path_looks_like_a_transient_install(
+                        &bundle.to_string_lossy(),
+                    ) && mac_setup::install_into_applications_and_relaunch(app.handle()).is_ok()
+                    {
+                        return Ok(());
+                    }
+                }
+            }
             let config = load_config().unwrap_or_default();
             apply_launch_at_login(app.handle(), config.launch_at_login);
 
@@ -339,6 +391,8 @@ fn main() {
                 overlay,
                 tray: tray.clone(),
             });
+            #[cfg(target_os = "macos")]
+            mac_setup::follow_permission_grants_and_relaunch(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -364,7 +418,10 @@ fn main() {
             list_hotkey_choices,
             host_platform,
             write_utf8_path,
-            read_utf8_path
+            read_utf8_path,
+            macos_setup_status,
+            install_into_applications,
+            request_dictation_permissions
         ])
         .build(tauri::generate_context!())
         .expect("error while building Rustle")
