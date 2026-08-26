@@ -465,6 +465,16 @@ fn transcribe_and_type(
     report_status: &(dyn Fn(DictationStatus) + Send + Sync),
 ) -> Result<()> {
     let (samples, sample_rate, channels) = stop_recording(active);
+    write_engine_log(&format!(
+        "captured samples={} rate={sample_rate} channels={channels}",
+        samples.len()
+    ));
+    if samples.is_empty() {
+        report_status(DictationStatus::Failed(
+            "The microphone produced no audio.".to_string(),
+        ));
+        return Ok(());
+    }
     let mono = downmix_to_mono(&samples, channels);
     let resampled = resample_linear(&mono, sample_rate, WHISPER_SAMPLE_RATE);
     let audio = trim_quiet_edges(&resampled).to_vec();

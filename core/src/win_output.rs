@@ -3,7 +3,9 @@ use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{
     eMultimedia, eRender, IMMDeviceEnumerator, MMDeviceEnumerator,
 };
-use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+};
 
 pub fn silence_system_output() -> Option<SilencedOutput> {
     let volume = endpoint_volume()?;
@@ -27,7 +29,7 @@ pub fn restore_system_output(saved: SilencedOutput) {
 
 fn endpoint_volume() -> Option<IAudioEndpointVolume> {
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         let enumerator: IMMDeviceEnumerator =
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
         let device = enumerator

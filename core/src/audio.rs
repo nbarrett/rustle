@@ -8,10 +8,16 @@ const SPEECH_PEAK_MINIMUM: f32 = 0.04;
 const QUIET_EDGE_PAD_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize / 5;
 
 pub struct ActiveRecording {
-    stream: cpal::Stream,
+    _keep_capturing: CaptureSession,
     samples: Arc<Mutex<Vec<f32>>>,
     sample_rate: u32,
     channels: u16,
+}
+
+enum CaptureSession {
+    Cpal(#[allow(dead_code)] cpal::Stream),
+    #[cfg(windows)]
+    Wasapi(crate::win_capture::WasapiCapture),
 }
 
 pub fn list_input_device_names() -> Result<Vec<String>> {
@@ -39,6 +45,26 @@ fn select_input_device(preferred_device_name: Option<&str>) -> Result<cpal::Devi
 }
 
 pub fn start_recording(preferred_device_name: Option<&str>) -> Result<ActiveRecording> {
+    #[cfg(windows)]
+    {
+        match crate::win_capture::start_wasapi_capture(preferred_device_name) {
+            Ok((keep_capturing, samples, sample_rate, channels)) => {
+                return Ok(ActiveRecording {
+                    _keep_capturing: CaptureSession::Wasapi(keep_capturing),
+                    samples,
+                    sample_rate,
+                    channels,
+                });
+            }
+            Err(error) => crate::win_capture::write_capture_log(&format!(
+                "wasapi capture failed; using cpal: {error}"
+            )),
+        }
+    }
+    start_cpal_recording(preferred_device_name)
+}
+
+fn start_cpal_recording(preferred_device_name: Option<&str>) -> Result<ActiveRecording> {
     let device = select_input_device(preferred_device_name)?;
     let supported = device.default_input_config()?;
 
@@ -49,7 +75,11 @@ pub fn start_recording(preferred_device_name: Option<&str>) -> Result<ActiveReco
 
     let samples = Arc::new(Mutex::new(Vec::<f32>::new()));
     let sink = samples.clone();
-    let report_stream_error = |error| eprintln!("audio stream error: {error}");
+    let report_stream_error = |error| {
+        let message = format!("audio stream error: {error}");
+        eprintln!("{message}");
+        write_audio_log(&message);
+    };
 
     let stream = match sample_format {
         cpal::SampleFormat::F32 => device.build_input_stream(
@@ -64,6 +94,16 @@ pub fn start_recording(preferred_device_name: Option<&str>) -> Result<ActiveReco
                 sink.lock()
                     .unwrap()
                     .extend(data.iter().map(|sample| *sample as f32 / i16::MAX as f32));
+            },
+            report_stream_error,
+            None,
+        )?,
+        cpal::SampleFormat::I32 => device.build_input_stream(
+            &config,
+            move |data: &[i32], _| {
+                sink.lock()
+                    .unwrap()
+                    .extend(data.iter().map(|sample| *sample as f32 / i32::MAX as f32));
             },
             report_stream_error,
             None,
@@ -84,11 +124,30 @@ pub fn start_recording(preferred_device_name: Option<&str>) -> Result<ActiveReco
 
     stream.play()?;
     Ok(ActiveRecording {
-        stream,
+        _keep_capturing: CaptureSession::Cpal(stream),
         samples,
         sample_rate,
         channels,
     })
+}
+
+fn write_audio_log(message: &str) {
+    let Ok(directory) = crate::config::rustle_directory() else {
+        return;
+    };
+    let path = directory.join("engine.log");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut file| {
+            use std::io::Write;
+            writeln!(file, "{stamp} {message}")
+        });
 }
 
 impl ActiveRecording {
@@ -107,12 +166,12 @@ impl ActiveRecording {
 
 pub fn stop_recording(active: ActiveRecording) -> (Vec<f32>, u32, u16) {
     let ActiveRecording {
-        stream,
+        _keep_capturing,
         samples,
         sample_rate,
         channels,
     } = active;
-    drop(stream);
+    drop(_keep_capturing);
     let captured = samples.lock().unwrap().clone();
     (captured, sample_rate, channels)
 }

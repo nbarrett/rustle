@@ -14,6 +14,9 @@ impl WhisperTranscriber {
     }
 
     pub fn transcribe(&self, audio: &[f32]) -> Result<String> {
+        if audio.is_empty() {
+            return Ok(String::new());
+        }
         let mut state = self.context.create_state()?;
 
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });

@@ -31,6 +31,8 @@ pub mod win_hotkey;
 pub mod win_insert;
 #[cfg(all(feature = "runtime", target_os = "windows"))]
 pub mod win_output;
+#[cfg(all(feature = "runtime", target_os = "windows"))]
+pub mod win_capture;
 #[cfg(all(feature = "runtime", target_os = "linux"))]
 pub mod linux_insert;
 #[cfg(all(feature = "runtime", target_os = "linux"))]
