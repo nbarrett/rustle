@@ -302,20 +302,20 @@ fn run_dictation_controller(
         match command {
             ControllerCommand::StartRecording => {
                 if recording.is_none() {
-                    silenced_output = crate::output::silence_system_output();
-                    write_engine_log(&format!("system output silenced={silenced_output:?}"));
+                    write_engine_log("hotkey press");
                     let config = shared_config.lock().unwrap().clone();
                     if let Err(error) =
                         ensure_model_loaded(&mut loaded_model, &config.model_file_name)
                     {
-                        if let Some(saved) = silenced_output.take() {
-                            crate::output::restore_system_output(saved);
-                        }
                         report_status(DictationStatus::Failed(format!("{error}")));
                         continue;
                     }
                     match start_recording(config.input_device_name.as_deref()) {
                         Ok(active) => {
+                            silenced_output = crate::output::silence_system_output();
+                            write_engine_log(&format!(
+                                "system output silenced={silenced_output:?}"
+                            ));
                             recording = Some(active);
                             inserted_text.clear();
                             insert_origin = None;
@@ -356,9 +356,6 @@ fn run_dictation_controller(
                             report_status(DictationStatus::Listening);
                         }
                         Err(error) => {
-                            if let Some(saved) = silenced_output.take() {
-                                crate::output::restore_system_output(saved);
-                            }
                             report_status(DictationStatus::Failed(format!(
                                 "recording failed: {error}"
                             )));
@@ -367,6 +364,7 @@ fn run_dictation_controller(
                 }
             }
             ControllerCommand::StopRecording => {
+                write_engine_log("hotkey release");
                 if let Some(active) = recording.take() {
                     if let Some(saved) = silenced_output.take() {
                         crate::output::restore_system_output(saved);

@@ -28,27 +28,47 @@ const DEVICE_FRIENDLY_NAME: PROPERTYKEY = PROPERTYKEY {
 const SHARED_BUFFER_HNS: i64 = 1_000_000;
 const POLL_IDLE: Duration = Duration::from_millis(5);
 const WASAPI_PACKET_IS_SILENT: u32 = 2;
+const WASAPI_START_TIMEOUT: Duration = Duration::from_millis(400);
+const WASAPI_STOP_TIMEOUT: Duration = Duration::from_millis(400);
 
 pub struct WasapiCapture {
     stop: Arc<AtomicBool>,
+    stopped: mpsc::Receiver<()>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl Drop for WasapiCapture {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        if self.stopped.recv_timeout(WASAPI_STOP_TIMEOUT).is_err() {
+            write_capture_log("wasapi capture did not stop in time");
+            let _ = self.thread.take();
+            return;
+        }
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
     }
 }
 
+struct NotifyWasapiCaptureStopped {
+    stopped: mpsc::Sender<()>,
+}
+
+impl Drop for NotifyWasapiCaptureStopped {
+    fn drop(&mut self) {
+        let _ = self.stopped.send(());
+    }
+}
+
 pub fn start_wasapi_capture(
     preferred_device_name: Option<&str>,
 ) -> Result<(WasapiCapture, Arc<Mutex<Vec<f32>>>, u32, u16)> {
+    write_capture_log("wasapi capture starting");
     let samples = Arc::new(Mutex::new(Vec::<f32>::new()));
     let stop = Arc::new(AtomicBool::new(false));
     let (ready_tx, ready_rx) = mpsc::channel();
+    let (stopped_tx, stopped_rx) = mpsc::channel();
     let preferred = preferred_device_name.map(str::to_string);
     let samples_for_thread = samples.clone();
     let stop_for_thread = stop.clone();
@@ -56,6 +76,9 @@ pub fn start_wasapi_capture(
     let thread = thread::Builder::new()
         .name("rustle-wasapi-in".into())
         .spawn(move || {
+            let _stopped = NotifyWasapiCaptureStopped {
+                stopped: stopped_tx,
+            };
             capture_from_wasapi_until_stopped(
                 preferred.as_deref(),
                 samples_for_thread,
@@ -64,13 +87,23 @@ pub fn start_wasapi_capture(
             );
         })?;
 
-    let (sample_rate, channels) = ready_rx
-        .recv()
-        .map_err(|_| anyhow!("wasapi capture thread ended before it started"))??;
+    let (sample_rate, channels) = match ready_rx.recv_timeout(WASAPI_START_TIMEOUT) {
+        Ok(Ok(started)) => started,
+        Ok(Err(error)) => {
+            let _ = thread.join();
+            return Err(error);
+        }
+        Err(_) => {
+            stop.store(true, Ordering::SeqCst);
+            write_capture_log("wasapi capture did not start in time");
+            return Err(anyhow!("wasapi capture did not start in time"));
+        }
+    };
 
     Ok((
         WasapiCapture {
             stop,
+            stopped: stopped_rx,
             thread: Some(thread),
         },
         samples,
@@ -105,7 +138,7 @@ fn capture_from_wasapi_until_stopped(
     ready: mpsc::Sender<Result<(u32, u16)>>,
 ) {
     let (audio_client, capture_client, sample_rate, channels, bits_per_sample, is_float) =
-        match start_wasapi_capture_session(preferred_device_name) {
+        match start_wasapi_capture_session(preferred_device_name, stop) {
             Ok(session) => session,
             Err(error) => {
                 write_capture_log(&format!("wasapi capture failed: {error}"));
@@ -145,6 +178,7 @@ fn capture_from_wasapi_until_stopped(
 
 fn start_wasapi_capture_session(
     preferred_device_name: Option<&str>,
+    stop: &AtomicBool,
 ) -> Result<(
     IAudioClient,
     IAudioCaptureClient,
@@ -153,6 +187,9 @@ fn start_wasapi_capture_session(
     u16,
     bool,
 )> {
+    if stop.load(Ordering::SeqCst) {
+        return Err(anyhow!("wasapi capture was cancelled"));
+    }
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let enumerator: IMMDeviceEnumerator =
@@ -160,7 +197,7 @@ fn start_wasapi_capture_session(
         let device = select_wasapi_capture_device(&enumerator, preferred_device_name)?;
         let device_name =
             friendly_name_of_wasapi_device(&device).unwrap_or_else(|| "-".to_string());
-        let audio_client = open_shared_wasapi_capture_client(&device)?;
+        let audio_client = open_shared_wasapi_capture_client(&device, stop)?;
         let format_ptr = audio_client.GetMixFormat()?;
         if format_ptr.is_null() {
             return Err(anyhow!("wasapi mix format was missing"));
@@ -194,14 +231,17 @@ fn start_wasapi_capture_session(
     }
 }
 
-fn open_shared_wasapi_capture_client(device: &IMMDevice) -> Result<IAudioClient> {
+fn open_shared_wasapi_capture_client(
+    device: &IMMDevice,
+    stop: &AtomicBool,
+) -> Result<IAudioClient> {
     unsafe {
         let format_client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
         let format_ptr = format_client.GetMixFormat()?;
         if format_ptr.is_null() {
             return Err(anyhow!("wasapi mix format was missing"));
         }
-        let opened = initialize_shared_wasapi_capture_client(device, format_ptr);
+        let opened = initialize_shared_wasapi_capture_client(device, format_ptr, stop);
         CoTaskMemFree(Some(format_ptr as *const _));
         opened
     }
@@ -210,6 +250,7 @@ fn open_shared_wasapi_capture_client(device: &IMMDevice) -> Result<IAudioClient>
 fn initialize_shared_wasapi_capture_client(
     device: &IMMDevice,
     format_ptr: *const WAVEFORMATEX,
+    stop: &AtomicBool,
 ) -> Result<IAudioClient> {
     unsafe {
         let flag_sets = [
@@ -221,6 +262,9 @@ fn initialize_shared_wasapi_capture_client(
         ];
         let mut last_error = None;
         for flags in flag_sets {
+            if stop.load(Ordering::SeqCst) {
+                return Err(anyhow!("wasapi capture was cancelled"));
+            }
             let audio_client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
             match audio_client.Initialize(
                 AUDCLNT_SHAREMODE_SHARED,

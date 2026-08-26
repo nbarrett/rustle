@@ -49,6 +49,9 @@ pub fn start_recording(preferred_device_name: Option<&str>) -> Result<ActiveReco
     {
         match crate::win_capture::start_wasapi_capture(preferred_device_name) {
             Ok((keep_capturing, samples, sample_rate, channels)) => {
+                crate::win_capture::write_capture_log(&format!(
+                    "wasapi recording rate={sample_rate} channels={channels}"
+                ));
                 return Ok(ActiveRecording {
                     _keep_capturing: CaptureSession::Wasapi(keep_capturing),
                     samples,
@@ -123,6 +126,9 @@ fn start_cpal_recording(preferred_device_name: Option<&str>) -> Result<ActiveRec
     };
 
     stream.play()?;
+    write_audio_log(&format!(
+        "cpal recording rate={sample_rate} channels={channels} format={sample_format:?}"
+    ));
     Ok(ActiveRecording {
         _keep_capturing: CaptureSession::Cpal(stream),
         samples,
