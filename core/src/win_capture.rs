@@ -165,30 +165,31 @@ fn start_wasapi_capture_session(
         if format_ptr.is_null() {
             return Err(anyhow!("wasapi mix format was missing"));
         }
-        let format = *format_ptr;
-        let is_float = mix_format_is_ieee_float(format_ptr);
+        let mix = copy_wasapi_mix_format(format_ptr);
         CoTaskMemFree(Some(format_ptr as *const _));
-        if !mix_format_can_decode(format.wBitsPerSample, is_float) {
+        if !mix_format_can_decode(mix.bits_per_sample, mix.is_float) {
             return Err(anyhow!(
-                "unsupported wasapi mix format bits={} float={is_float}",
-                format.wBitsPerSample
+                "unsupported wasapi mix format bits={} float={}",
+                mix.bits_per_sample,
+                mix.is_float
             ));
         }
         let capture_client: IAudioCaptureClient = audio_client.GetService()?;
         audio_client.Start()?;
         write_capture_log(&format!(
-            "wasapi capture started device={device_name:?} rate={} channels={} bits={} float={is_float}",
-            format.nSamplesPerSec,
-            format.nChannels,
-            format.wBitsPerSample
+            "wasapi capture started device={device_name:?} rate={} channels={} bits={} float={}",
+            mix.sample_rate,
+            mix.channels,
+            mix.bits_per_sample,
+            mix.is_float
         ));
         Ok((
             audio_client,
             capture_client,
-            format.nSamplesPerSec,
-            format.nChannels,
-            format.wBitsPerSample,
-            is_float,
+            mix.sample_rate,
+            mix.channels,
+            mix.bits_per_sample,
+            mix.is_float,
         ))
     }
 }
@@ -273,18 +274,34 @@ fn friendly_name_of_wasapi_device(device: &IMMDevice) -> Option<String> {
     }
 }
 
-fn mix_format_is_ieee_float(format_ptr: *const WAVEFORMATEX) -> bool {
+struct WasapiMixFormat {
+    sample_rate: u32,
+    channels: u16,
+    bits_per_sample: u16,
+    is_float: bool,
+}
+
+fn copy_wasapi_mix_format(format_ptr: *const WAVEFORMATEX) -> WasapiMixFormat {
     unsafe {
-        let format = *format_ptr;
-        match format.wFormatTag {
-            WAVE_FORMAT_IEEE_FLOAT => true,
-            tag if tag == WAVE_FORMAT_PCM as u16 => false,
-            WAVE_FORMAT_EXTENSIBLE => {
-                let extensible = std::ptr::read_unaligned(format_ptr as *const WAVEFORMATEXTENSIBLE);
-                let subtype = std::ptr::addr_of!(extensible.SubFormat).read_unaligned();
-                subtype == SUBTYPE_IEEE_FLOAT
-            }
-            _ => false,
+        let sample_rate = std::ptr::addr_of!((*format_ptr).nSamplesPerSec).read_unaligned();
+        let channels = std::ptr::addr_of!((*format_ptr).nChannels).read_unaligned();
+        let bits_per_sample = std::ptr::addr_of!((*format_ptr).wBitsPerSample).read_unaligned();
+        let tag = std::ptr::addr_of!((*format_ptr).wFormatTag).read_unaligned();
+        let is_float = if tag == WAVE_FORMAT_IEEE_FLOAT {
+            true
+        } else if tag == WAVE_FORMAT_PCM as u16 {
+            false
+        } else if tag == WAVE_FORMAT_EXTENSIBLE {
+            let extensible = std::ptr::read_unaligned(format_ptr as *const WAVEFORMATEXTENSIBLE);
+            std::ptr::addr_of!(extensible.SubFormat).read_unaligned() == SUBTYPE_IEEE_FLOAT
+        } else {
+            false
+        };
+        WasapiMixFormat {
+            sample_rate,
+            channels,
+            bits_per_sample,
+            is_float,
         }
     }
 }

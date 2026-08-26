@@ -50,4 +50,12 @@ If hold-to-talk only works while settings is frontmost, Input Monitoring is off 
 
 If Nick is still seeing the old failure, it is not fixed. Say what you changed and what you have not verified. Do not announce another install as the solution.
 
+## Rule 8: After a push, stay with it until GitHub Actions is green.
+
+A push is not finished when `git push` returns. Watch the GitHub Actions run for that push (and for a release tag, the tag run that publishes the apps) until it succeeds. If it fails, fix it, push, and watch again. Do not wait for Nick to ask whether it passed.
+
+A tag release is not done because the tag exists. It is done when the workflow has published the installers. A `main`-only push is done when the test job has passed.
+
+When you mention a run, use the Actions URL with its `databaseId` (`/actions/runs/<databaseId>`). Never write `#123` for a run number.
+
 Signed, the management.
