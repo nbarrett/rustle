@@ -16,7 +16,7 @@ import {
   listenForModelDownloadProgress,
   macosSetupStatus,
   notifyHotkeyEdge,
-  openAccessibilitySettings,
+  openPermissionSettings,
   requestDictationPermissions,
   readUtf8Path,
   relaunchApp,
@@ -36,6 +36,7 @@ import type {
   HotkeyOption,
   MacosSetupStatus,
   ModelChoice,
+  PermissionPane,
 } from "./types";
 
 let hotkeyChoices: HotkeyOption[] = [
@@ -122,6 +123,7 @@ let modelCatalog: ModelChoice[] = [];
 let wordReplaceEntryIndex: number | null = null;
 let wordReplaceSpoken = "";
 let pendingUpdate: Update | null = null;
+let insertBannerPane: PermissionPane = "accessibility";
 
 function isHistoryEntry(value: unknown): value is HistoryEntry {
   if (typeof value !== "object" || value === null) {
@@ -627,10 +629,37 @@ function statusSnippet(text: string | undefined): string {
   return `${trimmed.slice(0, 36)}…`;
 }
 
+function insertBannerAction(message: string): {
+  label: string;
+  pane: PermissionPane;
+} {
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("microphone") ||
+    lower.includes("recording") ||
+    lower.includes("audio") ||
+    lower.includes("coreaudio")
+  ) {
+    return { label: "Open Microphone settings", pane: "microphone" };
+  }
+  if (lower.includes("input monitoring")) {
+    return { label: "Open Input Monitoring settings", pane: "listen" };
+  }
+  if (platformName === "windows") {
+    return { label: "Open microphone settings", pane: "microphone" };
+  }
+  return { label: "Open Accessibility settings", pane: "accessibility" };
+}
+
 function setInsertNote(text: string | undefined): void {
   const message = (text ?? "").trim();
   elements.insertNote.textContent = message;
   elements.insertBanner.hidden = message === "";
+  if (message !== "") {
+    const action = insertBannerAction(message);
+    elements.openAccessibility.textContent = action.label;
+    insertBannerPane = action.pane;
+  }
   fitWindowToContent();
 }
 
@@ -726,13 +755,16 @@ function renderSetupStatus(status: MacosSetupStatus): void {
     elements.setupBanner.hidden = true;
     return;
   }
-  const ready = status.in_applications && status.listen && status.accessibility;
+  const microphone = status.microphone !== false;
+  const ready =
+    status.in_applications && status.listen && status.accessibility && microphone;
   elements.setupBanner.hidden = ready;
   elements.setupInstall.hidden = status.in_applications;
   const rows: Array<[boolean, string]> = [
     [status.in_applications, "Installed in Applications"],
     [status.listen, "Input Monitoring: hears the hotkey in other apps"],
     [status.accessibility, "Accessibility: types into the app you are using"],
+    [microphone, "Microphone: records what you say"],
   ];
   elements.setupList.replaceChildren();
   for (const [ok, label] of rows) {
@@ -742,6 +774,9 @@ function renderSetupStatus(status: MacosSetupStatus): void {
   }
   if (ready) {
     elements.setupNote.textContent = "Setup is complete.";
+  } else if (status.listen && status.accessibility && !microphone) {
+    elements.setupNote.textContent =
+      "Allow the microphone, then hold the push-to-talk key.";
   } else if (status.listen && status.accessibility) {
     elements.setupNote.textContent = "Permissions are on. Restarting…";
   } else {
@@ -981,7 +1016,7 @@ async function initialise(): Promise<void> {
     void saveSettings();
   });
   elements.openAccessibility.addEventListener("click", () => {
-    void openAccessibilitySettings();
+    void openPermissionSettings(insertBannerPane);
   });
   elements.installUpdate.addEventListener("click", () => {
     void installAvailableUpdate();

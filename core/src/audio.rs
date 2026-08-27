@@ -44,7 +44,42 @@ fn select_input_device(preferred_device_name: Option<&str>) -> Result<cpal::Devi
         .ok_or_else(|| anyhow!("no default input device found"))
 }
 
+pub fn recording_error_looks_like_a_closed_microphone(error: &impl std::fmt::Display) -> bool {
+    let text = error.to_string().to_ascii_lowercase();
+    text.contains("coreaudio")
+        || text.contains("backend-specific")
+        || text.contains("no default input")
+        || text.contains("not authorized")
+        || text.contains("access denied")
+        || text.contains("microphone")
+}
+
+pub fn message_for_a_failed_recording(error: &impl std::fmt::Display) -> String {
+    let text = error.to_string();
+    write_audio_log(&format!("recording failed: {text}"));
+    let lowered = text.to_ascii_lowercase();
+    if lowered.contains("no default input") {
+        "No microphone was found. Plug one in, or pick a different device.".to_string()
+    } else if recording_error_looks_like_a_closed_microphone(&text) {
+        "Rustle could not use the microphone. Enable it in Microphone settings, then try again."
+            .to_string()
+    } else {
+        "Rustle could not start recording.".to_string()
+    }
+}
+
 pub fn start_recording(preferred_device_name: Option<&str>) -> Result<ActiveRecording> {
+    #[cfg(target_os = "macos")]
+    {
+        if crate::mac_mic::microphone_access_was_refused() {
+            return Err(anyhow!(
+                "Rustle could not use the microphone. Enable it in Microphone settings, then try again."
+            ));
+        }
+        if crate::mac_mic::microphone_access_still_needs_a_prompt() {
+            crate::mac_mic::prompt_for_microphone_access();
+        }
+    }
     #[cfg(windows)]
     {
         match crate::win_capture::start_wasapi_capture(preferred_device_name) {
@@ -64,7 +99,30 @@ pub fn start_recording(preferred_device_name: Option<&str>) -> Result<ActiveReco
             )),
         }
     }
-    start_cpal_recording(preferred_device_name)
+    start_cpal_recording_trying_the_default_microphone_if_needed(preferred_device_name)
+}
+
+fn start_cpal_recording_trying_the_default_microphone_if_needed(
+    preferred_device_name: Option<&str>,
+) -> Result<ActiveRecording> {
+    match start_cpal_recording(preferred_device_name) {
+        Ok(active) => Ok(active),
+        Err(error) => {
+            write_audio_log(&format!(
+                "recording on the chosen microphone failed: {error}"
+            ));
+            if preferred_device_name.is_none() {
+                return Err(error);
+            }
+            write_audio_log("trying the system default microphone");
+            start_cpal_recording(None).map_err(|default_error| {
+                write_audio_log(&format!(
+                    "recording on the default microphone failed: {default_error}"
+                ));
+                default_error
+            })
+        }
+    }
 }
 
 fn start_cpal_recording(preferred_device_name: Option<&str>) -> Result<ActiveRecording> {
@@ -282,5 +340,36 @@ mod tests {
         assert!(trimmed.len() < clip.len());
         assert!(trimmed.iter().any(|sample| *sample == 0.2));
         assert_eq!(trimmed[trimmed.len() - 1], 0.0);
+    }
+
+    #[test]
+    fn coreaudio_errors_are_treated_as_a_closed_microphone() {
+        assert!(super::recording_error_looks_like_a_closed_microphone(
+            &"A backend-specific error has occurred: An unknown error unknown to the coreaudio-rs API occurred"
+        ));
+        assert!(super::recording_error_looks_like_a_closed_microphone(
+            &"Rustle could not use the microphone. Enable it in Microphone settings, then try again."
+        ));
+        assert!(!super::recording_error_looks_like_a_closed_microphone(
+            &"unsupported sample format: F64"
+        ));
+    }
+
+    #[test]
+    fn a_missing_input_device_gets_a_plain_microphone_message() {
+        assert_eq!(
+            super::message_for_a_failed_recording(&"no default input device found"),
+            "No microphone was found. Plug one in, or pick a different device."
+        );
+        assert_eq!(
+            super::message_for_a_failed_recording(
+                &"A backend-specific error has occurred: An unknown error unknown to the coreaudio-rs API occurred"
+            ),
+            "Rustle could not use the microphone. Enable it in Microphone settings, then try again."
+        );
+        assert_eq!(
+            super::message_for_a_failed_recording(&"unsupported sample format: F64"),
+            "Rustle could not start recording."
+        );
     }
 }

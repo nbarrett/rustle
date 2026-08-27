@@ -10,6 +10,7 @@ import type {
   ModelChoice,
   MacosSetupStatus,
   ModelDownloadProgress,
+  PermissionPane,
 } from "./types";
 
 export function getConfig(): Promise<Config> {
@@ -58,6 +59,10 @@ export function downloadModel(fileName: string, downloadUrl: string): Promise<vo
 
 export function openAccessibilitySettings(): Promise<void> {
   return invoke("open_accessibility_settings");
+}
+
+export function openPermissionSettings(pane: PermissionPane): Promise<void> {
+  return invoke("open_permission_settings", { pane });
 }
 
 export function macosSetupStatus(): Promise<MacosSetupStatus> {

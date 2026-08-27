@@ -15,6 +15,8 @@ pub mod output;
 pub mod transcribe;
 pub mod uk_english;
 
+#[cfg(target_os = "macos")]
+pub mod mac_mic;
 #[cfg(all(feature = "runtime", target_os = "macos"))]
 pub mod mac_ax;
 #[cfg(all(feature = "runtime", target_os = "macos"))]

@@ -3,21 +3,26 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const LIVE_TRANSCRIPTION_INTERVAL: Duration = Duration::from_millis(450);
+const LIVE_PREVIEW_PASS_WAIT: Duration = Duration::from_secs(3);
 const LIVE_TRANSCRIPT_MINIMUM_SECONDS: f32 = 0.35;
 const LIVE_PREVIEW_MINIMUM_SECONDS: f32 = 0.4;
 const CLIPBOARD_SETTLE: Duration = Duration::from_millis(50);
 const CLIPBOARD_RESTORE_AFTER_PASTE: Duration = Duration::from_millis(800);
 
 use crate::audio::{
-    clip_has_a_speech_peak, clip_is_quieter_than_speech, downmix_to_mono, resample_linear,
-    start_recording, stop_recording, trim_quiet_edges, ActiveRecording, WHISPER_SAMPLE_RATE,
+    clip_has_a_speech_peak, clip_is_quieter_than_speech, downmix_to_mono,
+    message_for_a_failed_recording, recording_error_looks_like_a_closed_microphone,
+    resample_linear, start_recording, stop_recording, ActiveRecording,
+    WHISPER_SAMPLE_RATE,
 };
 use crate::config::{apply_corrections, resolve_model_path, Config, Correction};
 use crate::transcribe::{
-    final_pass_threw_away_the_spoken_words, transcript_is_a_whisper_blank_phrase, WhisperTranscriber,
+    final_pass_only_extends_the_spoken_words, final_pass_threw_away_the_spoken_words,
+    transcript_is_a_whisper_blank_phrase, without_a_trailing_whisper_thank_you,
+    WhisperTranscriber,
 };
 use crate::uk_english::apply_locale_english_spelling;
 
@@ -313,15 +318,36 @@ fn run_dictation_controller(
                             report_status(DictationStatus::Listening);
                         }
                         Err(error) => {
-                            report_status(DictationStatus::Failed(format!(
-                                "recording failed: {error}"
-                            )));
+                            write_engine_log(&format!("recording failed: {error}"));
+                            let message = message_for_a_failed_recording(&error);
+                            if recording_error_looks_like_a_closed_microphone(&error)
+                                || recording_error_looks_like_a_closed_microphone(&message)
+                            {
+                                report_status(DictationStatus::NeedsPermission(message));
+                            } else {
+                                report_status(DictationStatus::Failed(message));
+                            }
                         }
                     }
                 }
             }
             ControllerCommand::StopRecording => {
                 write_engine_log("hotkey release");
+                let keep_holding = wait_for_release_then_drain_live_previews(
+                    &receiver,
+                    &live_pass_in_flight,
+                    &mut heard_while_holding,
+                    &mut inserted_text,
+                    &mut insert_origin,
+                    &mut live_ax_insert_works,
+                    #[cfg(target_os = "macos")]
+                    insert_target.as_ref(),
+                    report_status.as_ref(),
+                );
+                if keep_holding {
+                    write_engine_log("hotkey still down after a release flicker; keep recording");
+                    continue;
+                }
                 if let Some(active) = recording.take() {
                     if let Some(saved) = silenced_output.take() {
                         crate::output::restore_system_output(saved);
@@ -373,9 +399,9 @@ fn run_dictation_controller(
                 if recording.is_none() {
                     continue;
                 }
-                heard_while_holding = text.clone();
-                apply_live_preview(
+                apply_incoming_live_preview(
                     &text,
+                    &mut heard_while_holding,
                     &mut inserted_text,
                     &mut insert_origin,
                     &mut live_ax_insert_works,
@@ -388,19 +414,155 @@ fn run_dictation_controller(
     }
 }
 
+fn apply_incoming_live_preview(
+    text: &str,
+    heard_while_holding: &mut String,
+    inserted_text: &mut String,
+    insert_origin: &mut Option<i64>,
+    live_ax_insert_works: &mut bool,
+    #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
+    report_status: &(dyn Fn(DictationStatus) + Send + Sync),
+) {
+    let shown = without_a_trailing_whisper_thank_you(text);
+    if !live_transcript_should_be_typed(&shown) {
+        return;
+    }
+    if heard_while_holding.is_empty()
+        || spoken_word_count(&shown) >= spoken_word_count(heard_while_holding)
+    {
+        *heard_while_holding = shown.clone();
+        apply_live_preview(
+            &shown,
+            inserted_text,
+            insert_origin,
+            live_ax_insert_works,
+            #[cfg(target_os = "macos")]
+            insert_target,
+            report_status,
+        );
+    }
+}
+
+fn wait_for_release_then_drain_live_previews(
+    receiver: &Receiver<ControllerCommand>,
+    live_pass_in_flight: &AtomicBool,
+    heard_while_holding: &mut String,
+    inserted_text: &mut String,
+    insert_origin: &mut Option<i64>,
+    live_ax_insert_works: &mut bool,
+    #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
+    report_status: &(dyn Fn(DictationStatus) + Send + Sync),
+) -> bool {
+    let started = Instant::now();
+    loop {
+        while let Ok(command) = receiver.try_recv() {
+            match command {
+                ControllerCommand::LivePreview(text) => apply_incoming_live_preview(
+                    &text,
+                    heard_while_holding,
+                    inserted_text,
+                    insert_origin,
+                    live_ax_insert_works,
+                    #[cfg(target_os = "macos")]
+                    insert_target,
+                    report_status,
+                ),
+                ControllerCommand::StopRecording => {}
+                ControllerCommand::StartRecording => return true,
+            }
+        }
+        if !live_pass_in_flight.load(Ordering::SeqCst)
+            || started.elapsed() > LIVE_PREVIEW_PASS_WAIT
+        {
+            if live_pass_in_flight.load(Ordering::SeqCst) {
+                write_engine_log("live preview still running; continuing to final pass");
+            }
+            while let Ok(command) = receiver.try_recv() {
+                match command {
+                    ControllerCommand::LivePreview(text) => apply_incoming_live_preview(
+                        &text,
+                        heard_while_holding,
+                        inserted_text,
+                        insert_origin,
+                        live_ax_insert_works,
+                        #[cfg(target_os = "macos")]
+                        insert_target,
+                        report_status,
+                    ),
+                    ControllerCommand::StopRecording => {}
+                    ControllerCommand::StartRecording => return true,
+                }
+            }
+            return false;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn live_transcript_should_be_typed(text: &str) -> bool {
+    !text.trim().is_empty() && !transcript_is_a_whisper_blank_phrase(text)
+}
+
+fn spoken_word_count(text: &str) -> usize {
+    text.split_whitespace()
+        .filter(|word| word.chars().any(|character| character.is_ascii_alphanumeric()))
+        .count()
+}
+
+#[cfg(test)]
+fn transcript_looks_unfinished(text: &str) -> bool {
+    let trimmed = text.trim_end();
+    if trimmed.is_empty() || transcript_looks_cut_short(trimmed) {
+        return true;
+    }
+    !matches!(trimmed.chars().last(), Some('.' | '?' | '!'))
+}
+
+fn transcript_to_type_after_release(typed_so_far: &str, heard: &str, spoken: &str) -> String {
+    let spoken_usable = !spoken.is_empty()
+        && !transcript_is_a_whisper_blank_phrase(spoken)
+        && !transcript_looks_cut_short(spoken);
+    let heard_usable = live_transcript_should_be_typed(heard);
+
+    if !typed_so_far.is_empty() {
+        if !spoken_usable {
+            return typed_so_far.to_string();
+        }
+        if final_pass_only_extends_the_spoken_words(typed_so_far, spoken) {
+            return spoken.to_string();
+        }
+        if spoken_word_count(spoken) > spoken_word_count(typed_so_far)
+            && !final_pass_threw_away_the_spoken_words(typed_so_far, spoken)
+        {
+            return spoken.to_string();
+        }
+        return typed_so_far.to_string();
+    }
+
+    if spoken_usable {
+        if heard_usable && final_pass_threw_away_the_spoken_words(heard, spoken) {
+            return heard.to_string();
+        }
+        return spoken.to_string();
+    }
+    if heard_usable {
+        return heard.to_string();
+    }
+    spoken.to_string()
+}
+
 fn should_skip_typing(audio: &[f32], spoken: &str) -> bool {
     if spoken.trim().is_empty() {
         return true;
     }
-    if crate::transcribe::transcript_is_a_whisper_blank_phrase(spoken) {
+    if transcript_is_a_whisper_blank_phrase(spoken) {
         return true;
     }
     let too_quiet = clip_is_quieter_than_speech(audio) && !clip_has_a_speech_peak(audio);
     if !too_quiet {
         return false;
     }
-    crate::transcribe::transcript_is_only_thank_you(spoken)
-        || !spoken.chars().any(|character| character.is_ascii_alphanumeric())
+    !spoken.chars().any(|character| character.is_ascii_alphanumeric())
 }
 
 fn start_live_preview_pass(
@@ -463,9 +625,13 @@ fn apply_live_preview(
     report_status: &(dyn Fn(DictationStatus) + Send + Sync),
 ) {
     report_status(DictationStatus::Partial(text.to_string()));
+    let to_type = without_a_trailing_whisper_thank_you(text);
+    if !live_transcript_should_be_typed(&to_type) {
+        return;
+    }
     #[cfg(target_os = "macos")]
     if insert_target.is_some_and(|app| app.is_ours()) {
-        report_status(DictationStatus::SettingsPreview(text.to_string()));
+        report_status(DictationStatus::SettingsPreview(to_type.clone()));
     }
     if *live_ax_insert_works
         && !target_is_iterm(
@@ -477,8 +643,8 @@ fn apply_live_preview(
             insert_target,
         )
     {
-        match sync_focused_text_with_ax_only(inserted_text, text, insert_origin) {
-            Ok(()) => *inserted_text = text.to_string(),
+        match sync_focused_text_with_ax_only(inserted_text, &to_type, insert_origin) {
+            Ok(()) => *inserted_text = to_type.clone(),
             Err(error) => {
                 write_engine_log(&format!("live AX insert disabled: {error}"));
                 *live_ax_insert_works = false;
@@ -493,12 +659,12 @@ fn apply_live_preview(
             #[cfg(target_os = "macos")]
             insert_target,
             inserted_text,
-            text,
+            &to_type,
             false,
             true,
         ) {
             Ok(InsertKind::Iterm | InsertKind::SystemEvents | InsertKind::Keystroke) => {
-                *inserted_text = text.to_string();
+                *inserted_text = to_type;
             }
             Ok(_) => {}
             Err(error) => write_engine_log(&format!("live insert failed: {error}")),
@@ -519,9 +685,8 @@ fn transcribe_captured_samples(
         return None;
     }
     let mono = downmix_to_mono(captured, channels);
-    let resampled = resample_linear(&mono, sample_rate, WHISPER_SAMPLE_RATE);
-    let audio = trim_quiet_edges(&resampled);
-    let transcript = transcriber.transcribe(audio).ok()?;
+    let audio = resample_linear(&mono, sample_rate, WHISPER_SAMPLE_RATE);
+    let transcript = transcriber.transcribe_the_whole_clip(&audio).ok()?;
     let regional = apply_locale_english_spelling(transcript.trim());
     let corrected = apply_corrections(&regional, corrections);
     let trimmed = corrected.trim();
@@ -565,57 +730,40 @@ fn transcribe_and_type(
     ));
     if samples.is_empty() {
         report_status(DictationStatus::Failed(
-            "The microphone produced no audio.".to_string(),
+            "The microphone produced no audio. If you were speaking, enable Rustle in Microphone settings.".to_string(),
         ));
         return Ok(());
     }
     let mono = downmix_to_mono(&samples, channels);
     let audio = resample_linear(&mono, sample_rate, WHISPER_SAMPLE_RATE);
 
-    let heard = without_trailing_ellipsis(heard_while_holding);
-    let mut typed_so_far = already_inserted.to_string();
-    let live_text_is_cut_short = transcript_looks_cut_short(heard_while_holding);
-    if typed_so_far.is_empty()
-        && !heard.is_empty()
-        && !live_text_is_cut_short
-        && !target_uses_typed_keys(
-            #[cfg(target_os = "macos")]
-            insert_target,
-        )
-    {
-        write_engine_log(&format!(
-            "typing buffered live transcript chars={}",
-            heard.chars().count()
-        ));
-        sync_focused_text_to_transcript(
-            "",
-            heard,
-            insert_origin,
-            #[cfg(target_os = "macos")]
-            insert_target,
-        )?;
-        typed_so_far = heard.to_string();
-        report_status(DictationStatus::Partial(typed_so_far.clone()));
-    } else {
-        report_status(DictationStatus::Transcribing);
-    }
+    let heard = without_a_trailing_whisper_thank_you(without_trailing_ellipsis(
+        heard_while_holding,
+    ));
+    let typed_so_far = already_inserted.to_string();
+    report_status(DictationStatus::Transcribing);
 
     let config = shared_config.lock().unwrap().clone();
     ensure_model_loaded(loaded_model, &config.model_file_name)?;
-    let transcriber = loaded_model
+    let transcriber_slot = loaded_model
         .as_ref()
-        .ok_or_else(|| anyhow!("model was not loaded"))?
-        .1
-        .lock()
-        .unwrap();
+        .ok_or_else(|| anyhow!("model was not loaded"))?;
+    let transcriber = transcriber_slot.1.lock().unwrap();
     let raw_transcript = transcriber.transcribe_the_whole_clip(&audio)?;
     drop(transcriber);
     let regional = apply_locale_english_spelling(raw_transcript.trim());
     let corrected = apply_corrections(&regional, &config.corrections);
-    let spoken = corrected.trim();
+    let spoken = without_a_trailing_whisper_thank_you(corrected.trim());
+    write_engine_log(&format!(
+        "final pass chars={} live chars={} typed chars={}",
+        spoken.chars().count(),
+        heard.chars().count(),
+        typed_so_far.chars().count()
+    ));
 
     if typed_so_far.is_empty()
-        && (should_skip_typing(&audio, spoken) || transcript_is_a_whisper_blank_phrase(spoken))
+        && heard.is_empty()
+        && (should_skip_typing(&audio, &spoken) || transcript_is_a_whisper_blank_phrase(&spoken))
     {
         write_engine_log(&format!(
             "transcript discarded spoken={spoken:?} rms={} samples={}",
@@ -626,20 +774,14 @@ fn transcribe_and_type(
         return Ok(());
     }
 
-    let spoken = if final_pass_threw_away_the_spoken_words(&typed_so_far, spoken)
-        || (transcript_looks_cut_short(spoken) && !typed_so_far.is_empty())
-    {
-        write_engine_log(&format!(
-            "kept live transcript; final pass was {spoken:?}"
-        ));
-        typed_so_far.clone()
-    } else if spoken.is_empty() {
-        typed_so_far.clone()
-    } else if transcript_is_a_whisper_blank_phrase(spoken) && !typed_so_far.is_empty() {
-        typed_so_far.clone()
-    } else {
-        spoken.to_string()
-    };
+    let spoken = transcript_to_type_after_release(&typed_so_far, &heard, &spoken);
+    if spoken != typed_so_far && spoken != heard {
+        write_engine_log(&format!("using final transcript chars={}", spoken.chars().count()));
+    } else if spoken == typed_so_far && !typed_so_far.is_empty() {
+        write_engine_log("kept already typed transcript");
+    } else if spoken == heard && spoken != typed_so_far {
+        write_engine_log("kept live transcript");
+    }
 
     if spoken.is_empty() {
         report_status(DictationStatus::Idle);
@@ -1077,12 +1219,28 @@ fn ensure_model_loaded(
 
 #[cfg(test)]
 mod tests {
-    use super::{should_skip_typing, transcript_looks_cut_short, without_trailing_ellipsis};
+    use super::{
+        live_transcript_should_be_typed, should_skip_typing, transcript_looks_cut_short,
+        transcript_looks_unfinished, transcript_to_type_after_release, without_trailing_ellipsis,
+    };
 
     #[test]
     fn a_quiet_thank_you_is_not_typed() {
         let audio = vec![0.0; 8000];
         assert!(should_skip_typing(&audio, "Thank you."));
+    }
+
+    #[test]
+    fn a_loud_thank_you_is_not_typed() {
+        let audio = vec![0.2; 8000];
+        assert!(should_skip_typing(&audio, "Thank you."));
+        assert!(should_skip_typing(&audio, "Thanks"));
+        assert!(should_skip_typing(&audio, "Thank you so much!"));
+        assert!(!should_skip_typing(&audio, "Please send the invoice, thank you"));
+        assert!(!live_transcript_should_be_typed("Thank you."));
+        assert!(live_transcript_should_be_typed(
+            "Please send the invoice, thank you"
+        ));
     }
 
     #[test]
@@ -1117,5 +1275,49 @@ mod tests {
             "the things that"
         );
         assert!(!transcript_looks_cut_short("the things that"));
+    }
+
+    #[test]
+    fn a_half_sentence_is_unfinished() {
+        assert!(transcript_looks_unfinished("I've never paid any"));
+        assert!(transcript_looks_unfinished("Great. Can you amend the"));
+        assert!(!transcript_looks_unfinished("Sometimes it stops halfway."));
+        assert!(!transcript_looks_unfinished("Does it still work?"));
+    }
+
+    #[test]
+    fn release_prefers_the_longer_whole_clip_over_a_cut_live_pass() {
+        assert_eq!(
+            transcript_to_type_after_release(
+                "",
+                "I've never paid any",
+                "I've never paid anything like that much money."
+            ),
+            "I've never paid anything like that much money."
+        );
+        assert_eq!(
+            transcript_to_type_after_release(
+                "",
+                "It doesn't seem quite as reliable when I hold the button down. Sometimes it stops halfway.",
+                "It doesn't seem quite as reliable when I hold a button down. Sometimes it stops halfway. Try again now."
+            ),
+            "It doesn't seem quite as reliable when I hold a button down. Sometimes it stops halfway. Try again now."
+        );
+        assert_eq!(
+            transcript_to_type_after_release(
+                "It's not about NGX. I've never paid any",
+                "It's not about NGX. I've never paid any",
+                "This isn't about NGX. I've never paid anything like that much money."
+            ),
+            "This isn't about NGX. I've never paid anything like that much money."
+        );
+        assert_eq!(
+            transcript_to_type_after_release(
+                "",
+                "Please send the invoice, thank you",
+                "Please send the invoice"
+            ),
+            "Please send the invoice, thank you"
+        );
     }
 }

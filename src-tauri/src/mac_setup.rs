@@ -10,6 +10,10 @@ use rustle_core::mac_ax::{process_is_trusted, request_accessibility_prompt};
 use rustle_core::mac_hotkey::{
     listen_event_access_is_granted, request_listen_event_access, request_post_event_access,
 };
+use rustle_core::mac_mic::{
+    microphone_access_is_granted, microphone_access_still_needs_a_prompt,
+    microphone_access_was_refused, prompt_for_microphone_access,
+};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -20,6 +24,7 @@ pub struct MacosSetupStatus {
     pub in_applications: bool,
     pub listen: bool,
     pub accessibility: bool,
+    pub microphone: bool,
 }
 
 pub fn running_app_bundle_path() -> Option<PathBuf> {
@@ -40,32 +45,74 @@ pub fn current_setup_status() -> MacosSetupStatus {
             && !path_looks_like_a_transient_install(&path),
         listen: listen_event_access_is_granted(),
         accessibility: process_is_trusted(),
+        microphone: microphone_access_is_granted(),
     }
 }
 
-pub fn setup_is_complete(status: &MacosSetupStatus) -> bool {
-    status.in_applications && status.listen && status.accessibility
+fn open_privacy_pane(modern: &str, legacy: &str) {
+    let _ = Command::new("open")
+        .arg(format!(
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?{modern}"
+        ))
+        .status();
+    let _ = Command::new("open")
+        .arg(format!(
+            "x-apple.systempreferences:com.apple.preference.security?{legacy}"
+        ))
+        .status();
+}
+
+pub fn open_microphone_settings() {
+    open_privacy_pane("Privacy_Microphone", "Privacy_Microphone");
+}
+
+pub fn open_listen_event_settings() {
+    open_privacy_pane("Privacy_ListenEvent", "Privacy_ListenEvent");
+}
+
+pub fn open_accessibility_settings() {
+    open_privacy_pane("Privacy_Accessibility", "Privacy_Accessibility");
+}
+
+pub fn open_missing_permission_settings() {
+    let status = current_setup_status();
+    if microphone_access_was_refused() {
+        open_microphone_settings();
+        return;
+    }
+    if !status.listen {
+        open_listen_event_settings();
+        return;
+    }
+    if !status.accessibility {
+        open_accessibility_settings();
+        return;
+    }
+    if !status.microphone {
+        open_microphone_settings();
+    }
 }
 
 pub fn open_dictation_permission_settings() {
-    let _ = Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent")
-        .status();
-    let _ = Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")
-        .status();
-    let _ = Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
-        .status();
-    let _ = Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-        .status();
+    open_missing_permission_settings();
+}
+
+pub fn open_permission_pane(pane: &str) {
+    match pane {
+        "microphone" => open_microphone_settings(),
+        "listen" => open_listen_event_settings(),
+        "accessibility" => open_accessibility_settings(),
+        _ => open_missing_permission_settings(),
+    }
 }
 
 pub fn request_dictation_permissions() {
     let _ = request_listen_event_access();
     let _ = request_post_event_access();
     let _ = request_accessibility_prompt();
+    if microphone_access_still_needs_a_prompt() || !microphone_access_is_granted() {
+        prompt_for_microphone_access();
+    }
     let _ = rustle_core::audio::list_input_device_names();
 }
 
@@ -144,11 +191,11 @@ pub fn follow_permission_grants_and_relaunch(app: AppHandle) {
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(200));
         let initial = current_setup_status();
-        if !initial.listen || !initial.accessibility {
-            open_dictation_permission_settings();
+        if !initial.listen || !initial.accessibility || microphone_access_was_refused() {
+            open_missing_permission_settings();
             reveal_settings_window(&app);
         }
-        if setup_is_complete(&initial) {
+        if initial.listen && initial.accessibility {
             return;
         }
         loop {

@@ -187,7 +187,8 @@ fn macos_setup_status() -> serde_json::Value {
             serde_json::json!({
                 "in_applications": false,
                 "listen": false,
-                "accessibility": false
+                "accessibility": false,
+                "microphone": false
             })
         })
     }
@@ -196,7 +197,8 @@ fn macos_setup_status() -> serde_json::Value {
         serde_json::json!({
             "in_applications": true,
             "listen": true,
-            "accessibility": true
+            "accessibility": true,
+            "microphone": true
         })
     }
 }
@@ -235,18 +237,25 @@ fn read_utf8_path(path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn open_accessibility_settings() {
+    open_permission_settings("accessibility".to_string());
+}
+
+#[tauri::command]
+fn open_permission_settings(pane: String) {
     #[cfg(target_os = "macos")]
     {
-        mac_setup::open_dictation_permission_settings();
+        mac_setup::open_permission_pane(&pane);
     }
     #[cfg(target_os = "windows")]
     {
+        let _ = pane;
         let _ = std::process::Command::new("cmd")
             .args(["/C", "start", "ms-settings:privacy-microphone"])
             .status();
     }
     #[cfg(target_os = "linux")]
     {
+        let _ = pane;
         let _ = std::process::Command::new("xdg-open")
             .arg("settings://")
             .status();
@@ -429,6 +438,7 @@ fn main() {
             download_model,
             show_settings_window,
             open_accessibility_settings,
+            open_permission_settings,
             resize_settings_window,
             list_hotkey_choices,
             host_platform,

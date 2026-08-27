@@ -29,7 +29,7 @@ const FIELD_KEYCODE: u32 = 9;
 const FIELD_AUTOREPEAT: u32 = 8;
 
 const HOTKEY_RELEASE_POLL: Duration = Duration::from_millis(40);
-const HOTKEY_RELEASE_STAYS_UP: Duration = Duration::from_millis(80);
+const HOTKEY_RELEASE_STAYS_UP: Duration = Duration::from_millis(400);
 
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {

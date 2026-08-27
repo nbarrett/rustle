@@ -3391,6 +3391,7 @@ version = "0.1.7"
 dependencies = [
  "anyhow",
  "arboard",
+ "block2",
  "cpal",
  "dirs 5.0.1",
  "dispatch2",

@@ -57,4 +57,7 @@ export type MacosSetupStatus = {
   in_applications: boolean;
   listen: boolean;
   accessibility: boolean;
+  microphone: boolean;
 };
+
+export type PermissionPane = "microphone" | "listen" | "accessibility";

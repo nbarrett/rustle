@@ -33,14 +33,15 @@ On a Mac, live words can appear as you speak. On Windows and Linux, the grey HUD
 
 ## Permissions (one time)
 
-**macOS** — first launch copies Rustle into Applications if you opened it from the DMG, then a setup panel asks for Input Monitoring and Accessibility. Turn those switches on; Rustle restarts itself when they are granted.
+**macOS** — first launch copies Rustle into Applications if you opened it from the DMG, then a setup panel asks for Microphone, Input Monitoring and Accessibility. Allow the microphone prompt; turn the other two switches on. Rustle restarts itself when Input Monitoring and Accessibility are granted.
 
 The GitHub download is not Apple-notarised yet (that needs a Developer ID certificate). If macOS shows **Open Anyway**, use it once for that copy.
 
 Then System Settings → Privacy & Security:
 
-- **Accessibility** - to type into the focused app
+- **Microphone** - to record what you say
 - **Input Monitoring** - to hear the global hotkey
+- **Accessibility** - to type into the focused app
 
 Grant these to whatever launches Rustle: your terminal while developing, or the built `.app` once bundled. Relaunch that app after granting, because the grant only takes effect on a fresh start.
 
@@ -65,7 +66,7 @@ npx tauri dev
 
 `npm start` does the same. A tray icon appears. Click it (or **Open Rustle Settings**) to open the panel. Download a model if you have not already (base.en is the quick start), pick your hotkey and microphone, and hold the hotkey in any text field.
 
-On macOS, grant Accessibility and Input Monitoring to the process that launched it (often Terminal, or the `rustle-app` binary under `target/`). Quit and reopen after granting.
+On macOS, grant Microphone, Input Monitoring and Accessibility to the process that launched it (often Terminal, or the `rustle-app` binary under `target/`). Quit and reopen after granting Input Monitoring or Accessibility.
 
 ### Prebuilt apps (Mac, Windows, Linux)
 
