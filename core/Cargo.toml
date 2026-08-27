@@ -1,6 +1,6 @@
 [package]
 name = "rustle-core"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 license = "MIT"
 description = "Reusable dictation core for Rustle: config, audio capture, Whisper transcription, hotkey listening and keystroke injection."
