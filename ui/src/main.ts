@@ -57,6 +57,7 @@ let platformName = hostOsFromUserAgent();
 document.documentElement.dataset.os = platformName;
 
 const HISTORY_STORAGE_KEY = "rustle-history";
+const LAST_TRANSCRIPT_STORAGE_KEY = "rustle-last-transcript";
 const HISTORY_LIMIT = 200;
 const DEFAULT_MODEL_FILE_NAME = "ggml-base.en.bin";
 
@@ -264,6 +265,30 @@ async function saveWordReplacement(): Promise<void> {
   fitWindowToContent();
 }
 
+function persistLastTranscript(text: string): void {
+  try {
+    localStorage.setItem(LAST_TRANSCRIPT_STORAGE_KEY, text);
+  } catch {
+    return;
+  }
+}
+
+function showLastTranscript(text: string, persist: boolean): void {
+  elements.liveTranscript.value = text;
+  elements.liveTranscript.scrollTop = elements.liveTranscript.scrollHeight;
+  if (persist) {
+    persistLastTranscript(text);
+  }
+}
+
+function loadLastTranscript(): string {
+  try {
+    return localStorage.getItem(LAST_TRANSCRIPT_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function addHistoryEntry(text: string | undefined): void {
   const trimmed = (text ?? "").trim();
   if (!trimmed) {
@@ -274,6 +299,7 @@ function addHistoryEntry(text: string | undefined): void {
   dictationHistory = dictationHistory.slice(0, HISTORY_LIMIT);
   saveHistory();
   renderHistory();
+  showLastTranscript(trimmed, true);
   fitWindowToContent();
 }
 
@@ -590,6 +616,17 @@ function setStatus(text: string, className: string): void {
   elements.statusPill.className = `status-pill ${className}`;
 }
 
+function statusSnippet(text: string | undefined): string {
+  const trimmed = (text ?? "").trim();
+  if (trimmed === "") {
+    return "Listening";
+  }
+  if (trimmed.length <= 36) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, 36)}…`;
+}
+
 function setInsertNote(text: string | undefined): void {
   const message = (text ?? "").trim();
   elements.insertNote.textContent = message;
@@ -603,7 +640,8 @@ function applyStatusEvent(payload: DictationStatusEvent): void {
       setStatus("Listening", "status-live");
       break;
     case "partial":
-      setStatus("Listening", "status-live");
+      setStatus(statusSnippet(payload.text), "status-live");
+      showLastTranscript(payload.text ?? "", false);
       break;
     case "transcribing":
       setStatus("Transcribing", "status-work");
@@ -614,7 +652,7 @@ function applyStatusEvent(payload: DictationStatusEvent): void {
       addHistoryEntry(payload.text);
       break;
     case "settings_preview":
-      elements.liveTranscript.value = payload.text;
+      showLastTranscript(payload.text ?? "", false);
       break;
     case "needs_permission":
       setInsertNote(payload.text);
@@ -959,6 +997,18 @@ async function initialise(): Promise<void> {
 
   dictationHistory = loadHistory();
   renderHistory();
+  const savedTranscript = loadLastTranscript();
+  if (savedTranscript !== "") {
+    showLastTranscript(savedTranscript, false);
+  } else if (dictationHistory[0]) {
+    showLastTranscript(dictationHistory[0].text, true);
+  }
+  elements.liveTranscript.addEventListener("input", () => {
+    persistLastTranscript(elements.liveTranscript.value);
+  });
+  elements.liveTranscript.addEventListener("focus", () => {
+    elements.liveTranscript.scrollTop = elements.liveTranscript.scrollHeight;
+  });
   elements.clearHistory.addEventListener("click", () => {
     dictationHistory = [];
     saveHistory();

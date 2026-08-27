@@ -48,15 +48,46 @@ impl Default for Config {
     }
 }
 
+const SPOKEN_PUNCTUATION: &[(&str, &str)] = &[
+    ("open parenthesis", "("),
+    ("closed parenthesis", ")"),
+    ("left parenthesis", "("),
+    ("right parenthesis", ")"),
+    ("open bracket", "("),
+    ("closed bracket", ")"),
+    ("close bracket", ")"),
+    ("clothes bracket", ")"),
+    ("left bracket", "("),
+    ("right bracket", ")"),
+    ("left packet", "("),
+    ("right packet", ")"),
+    ("closed packet", ")"),
+    ("close packet", ")"),
+    ("left paren", "("),
+    ("right paren", ")"),
+];
+
 pub fn apply_corrections(text: &str, corrections: &[Correction]) -> String {
     let mut result = text.to_string();
+    for (spoken, written) in SPOKEN_PUNCTUATION {
+        result = replace_ascii_case_insensitive(&result, spoken, written);
+    }
     for correction in corrections {
         if correction.spoken.is_empty() {
             continue;
         }
         result = replace_ascii_case_insensitive(&result, &correction.spoken, &correction.written);
     }
-    result
+    tidy_spaces_and_commas_next_to_brackets(&result)
+}
+
+fn tidy_spaces_and_commas_next_to_brackets(text: &str) -> String {
+    text.replace("(, ", "(")
+        .replace(", )", ")")
+        .replace("(,", "(")
+        .replace(",)", ")")
+        .replace("( ", "(")
+        .replace(" )", ")")
 }
 
 fn replace_ascii_case_insensitive(haystack: &str, from: &str, to: &str) -> String {
@@ -210,5 +241,30 @@ mod tests {
     fn skips_empty_spoken_form() {
         let rules = [rule("", "Nope")];
         assert_eq!(apply_corrections("leave this", &rules), "leave this");
+    }
+
+    #[test]
+    fn left_and_right_bracket_become_parentheses() {
+        assert_eq!(
+            apply_corrections("Left bracket, 87 right bracket", &[]),
+            "(87)"
+        );
+    }
+
+    #[test]
+    fn clothes_bracket_is_treated_as_a_closing_bracket() {
+        assert_eq!(
+            apply_corrections("Left bracket, 87 clothes bracket.", &[]),
+            "(87)."
+        );
+    }
+
+    #[test]
+    fn left_packet_becomes_an_opening_bracket() {
+        let rules = [rule("left packet", "("), rule("right packet", ")")];
+        assert_eq!(
+            apply_corrections("I'm just testing now left packet, 87 closed packet.", &rules),
+            "I'm just testing now (87)."
+        );
     }
 }

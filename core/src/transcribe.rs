@@ -14,6 +14,14 @@ impl WhisperTranscriber {
     }
 
     pub fn transcribe(&self, audio: &[f32]) -> Result<String> {
+        self.transcribe_audio(audio, true)
+    }
+
+    pub fn transcribe_the_whole_clip(&self, audio: &[f32]) -> Result<String> {
+        self.transcribe_audio(audio, false)
+    }
+
+    fn transcribe_audio(&self, audio: &[f32], single_segment: bool) -> Result<String> {
         if audio.is_empty() {
             return Ok(String::new());
         }
@@ -24,7 +32,7 @@ impl WhisperTranscriber {
         params.set_print_special(false);
         params.set_print_realtime(false);
         params.set_no_context(true);
-        params.set_single_segment(true);
+        params.set_single_segment(single_segment);
         params.set_suppress_blank(true);
         params.set_suppress_non_speech_tokens(true);
         let british_prompt = crate::uk_english::prefers_british_english()
@@ -81,7 +89,7 @@ pub fn final_pass_threw_away_the_spoken_words(live: &str, spoken: &str) -> bool 
 pub fn transcript_is_a_whisper_blank_phrase(text: &str) -> bool {
     let normalised = normalised_transcript_words(text);
     if normalised.is_empty() {
-        return true;
+        return text.trim().is_empty();
     }
     matches!(
         normalised.as_str(),
@@ -131,9 +139,13 @@ mod tests {
     fn youtube_credit_lines_are_blank_phrases() {
         assert!(transcript_is_a_whisper_blank_phrase("Thanks for watching!"));
         assert!(transcript_is_a_whisper_blank_phrase("Please subscribe"));
+        assert!(transcript_is_a_whisper_blank_phrase(""));
+        assert!(transcript_is_a_whisper_blank_phrase("   "));
         assert!(!transcript_is_a_whisper_blank_phrase("Thank you."));
         assert!(!transcript_is_a_whisper_blank_phrase("thanks"));
         assert!(!transcript_is_a_whisper_blank_phrase("hold the function key"));
+        assert!(!transcript_is_a_whisper_blank_phrase("(, )."));
+        assert!(!transcript_is_a_whisper_blank_phrase("?"));
     }
 
     #[test]

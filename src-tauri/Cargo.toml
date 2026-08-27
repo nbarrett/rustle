@@ -22,4 +22,5 @@ tauri-plugin-dialog = "2.7.2"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
+objc2-quartz-core = { version = "0.3", features = ["CALayer"] }
 dispatch2 = "0.3"

@@ -4,17 +4,15 @@ use std::thread;
 use std::time::Duration;
 
 #[cfg(target_os = "macos")]
-use dispatch2::DispatchQueue;
-#[cfg(target_os = "macos")]
 use objc2::rc::Retained;
 #[cfg(target_os = "macos")]
 use objc2::{MainThreadMarker, MainThreadOnly};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
-    NSBackingStoreType, NSColor, NSFont, NSLineBreakMode, NSPanel, NSPopUpMenuWindowLevel, NSScreen,
-    NSTextAlignment, NSTextField, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
-    NSVisualEffectState, NSVisualEffectView, NSWindowAnimationBehavior, NSWindowCollectionBehavior,
-    NSWindowStyleMask,
+    NSAppearance, NSAppearanceCustomization, NSAppearanceNameDarkAqua, NSBackingStoreType, NSColor,
+    NSFont, NSLineBreakMode, NSPanel, NSPopUpMenuWindowLevel, NSScreen, NSTextAlignment, NSTextField,
+    NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
+    NSWindowAnimationBehavior, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
@@ -28,7 +26,9 @@ const OVERLAY_HORIZONTAL_PADDING: f64 = 22.0;
 const OVERLAY_VERTICAL_PADDING: f64 = 14.0;
 const OVERLAY_MAX_TEXT_WIDTH: f64 = 520.0;
 const OVERLAY_MIN_WIDTH: f64 = 220.0;
-const OVERLAY_BOTTOM_MARGIN: f64 = 80.0;
+const OVERLAY_MAX_TEXT_HEIGHT: f64 = 42.0;
+const OVERLAY_BOTTOM_MARGIN: f64 = 96.0;
+const OVERLAY_CORNER_RADIUS: f64 = 12.0;
 const OVERLAY_HIDE_DELAY: Duration = Duration::from_millis(1400);
 
 #[cfg(target_os = "macos")]
@@ -172,6 +172,32 @@ impl DictationOverlay {
 }
 
 #[cfg(target_os = "macos")]
+fn place_overlay_on_screen(panel: &NSPanel, width: f64, height: f64, mtm: MainThreadMarker) {
+    let Some(screen) = NSScreen::mainScreen(mtm) else {
+        return;
+    };
+    let visible = screen.visibleFrame();
+    let x = visible.origin.x + ((visible.size.width - width) / 2.0);
+    let min_y = visible.origin.y + 16.0;
+    let max_y = (visible.origin.y + visible.size.height - height - 16.0).max(min_y);
+    let y = (visible.origin.y + OVERLAY_BOTTOM_MARGIN).clamp(min_y, max_y);
+    panel.setFrame_display(NSRect::new(NSPoint::new(x, y), NSSize::new(width, height)), false);
+}
+
+#[cfg(target_os = "macos")]
+fn round_overlay_corners(panel: &NSPanel) {
+    if let Some(visual) = panel.contentView() {
+        visual.setWantsLayer(true);
+        visual.setClipsToBounds(true);
+        if let Some(layer) = visual.layer() {
+            layer.setCornerRadius(OVERLAY_CORNER_RADIUS);
+            layer.setMasksToBounds(true);
+        }
+    }
+    panel.invalidateShadow();
+}
+
+#[cfg(target_os = "macos")]
 impl NativeOverlay {
     fn try_create() -> Option<Self> {
         let mtm = MainThreadMarker::new()?;
@@ -189,13 +215,11 @@ impl NativeOverlay {
         panel.setWorksWhenModal(true);
         panel.setHidesOnDeactivate(false);
         panel.setLevel(NSPopUpMenuWindowLevel);
-        panel.setOpaque(true);
+        panel.setOpaque(false);
         panel.setHasShadow(true);
         panel.setIgnoresMouseEvents(true);
         panel.setAnimationBehavior(NSWindowAnimationBehavior::None);
-        panel.setBackgroundColor(Some(&NSColor::colorWithSRGBRed_green_blue_alpha(
-            0.11, 0.11, 0.13, 0.96,
-        )));
+        panel.setBackgroundColor(Some(&NSColor::clearColor()));
         panel.setCollectionBehavior(
             NSWindowCollectionBehavior::CanJoinAllSpaces
                 .union(NSWindowCollectionBehavior::Stationary)
@@ -214,12 +238,17 @@ impl NativeOverlay {
         visual.setBlendingMode(NSVisualEffectBlendingMode::WithinWindow);
         visual.setState(NSVisualEffectState::Active);
         visual.setWantsLayer(true);
+        visual.setClipsToBounds(true);
+        if let Some(dark) = unsafe { NSAppearance::appearanceNamed(NSAppearanceNameDarkAqua) } {
+            visual.setAppearance(Some(&dark));
+            panel.setAppearance(Some(&dark));
+        }
 
         let field = NSTextField::labelWithString(&NSString::from_str(""), mtm);
         field.setFont(Some(&NSFont::systemFontOfSize(15.0)));
         field.setTextColor(Some(&NSColor::whiteColor()));
         field.setAlignment(NSTextAlignment::Left);
-        field.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
+        field.setLineBreakMode(NSLineBreakMode::ByWordWrapping);
         field.setMaximumNumberOfLines(2);
         field.setPreferredMaxLayoutWidth(OVERLAY_MAX_TEXT_WIDTH);
         field.setDrawsBackground(false);
@@ -227,41 +256,40 @@ impl NativeOverlay {
 
         visual.addSubview(&field);
         panel.setContentView(Some(&visual));
+        round_overlay_corners(&panel);
 
         Some(Self { panel, field })
     }
 
     fn set_text(&self, text: &str) {
-        let Some(mtm) = MainThreadMarker::new() else {
-            return;
-        };
+        self.field.setPreferredMaxLayoutWidth(OVERLAY_MAX_TEXT_WIDTH);
         self.field.setStringValue(&NSString::from_str(text));
         self.field.sizeToFit();
         let text_size = self.field.frame().size;
-        let width = text_size
+        let text_width = text_size
             .width
             .min(OVERLAY_MAX_TEXT_WIDTH)
-            .max(OVERLAY_MIN_WIDTH)
-            + (OVERLAY_HORIZONTAL_PADDING * 2.0);
-        let height = text_size.height + (OVERLAY_VERTICAL_PADDING * 2.0);
-        self.panel
-            .setContentSize(NSSize::new(width, height));
+            .max(OVERLAY_MIN_WIDTH);
+        let text_height = text_size.height.min(OVERLAY_MAX_TEXT_HEIGHT).max(20.0);
+        let width = text_width + (OVERLAY_HORIZONTAL_PADDING * 2.0);
+        let height = text_height + (OVERLAY_VERTICAL_PADDING * 2.0);
         if let Some(visual) = self.panel.contentView() {
             visual.setFrame(NSRect::new(
                 NSPoint::new(0.0, 0.0),
                 NSSize::new(width, height),
             ));
+            visual.setNeedsDisplay(true);
         }
+        round_overlay_corners(&self.panel);
         self.field.setFrame(NSRect::new(
             NSPoint::new(OVERLAY_HORIZONTAL_PADDING, OVERLAY_VERTICAL_PADDING),
-            NSSize::new(width - (OVERLAY_HORIZONTAL_PADDING * 2.0), text_size.height),
+            NSSize::new(width - (OVERLAY_HORIZONTAL_PADDING * 2.0), text_height),
         ));
-        if let Some(screen) = NSScreen::mainScreen(mtm) {
-            let visible = screen.visibleFrame();
-            let x = visible.origin.x + ((visible.size.width - width) / 2.0);
-            let y = visible.origin.y + OVERLAY_BOTTOM_MARGIN;
-            self.panel.setFrameOrigin(NSPoint::new(x, y));
+        if let Some(mtm) = MainThreadMarker::new() {
+            place_overlay_on_screen(&self.panel, width, height, mtm);
         }
+        self.panel.setAlphaValue(1.0);
+        self.panel.orderFront(None);
     }
 }
 
@@ -313,15 +341,7 @@ fn position_hud(hud: &tauri::WebviewWindow) {
 }
 
 pub fn run_on_ui_thread(app: &AppHandle, work: impl FnOnce() + Send + 'static) {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = app;
-        DispatchQueue::main().exec_async(work);
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = app.run_on_main_thread(work);
-    }
+    let _ = app.run_on_main_thread(work);
 }
 
 fn set_tray(tray: &TrayIcon, title: &str, tooltip: Option<&str>) {

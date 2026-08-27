@@ -1,10 +1,13 @@
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::ptr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 use crate::config::Config;
+use crate::hotkey::HotkeyChoice;
 pub use crate::hotkey::HotkeyEdge;
 
 type CFTypeRef = *mut c_void;
@@ -20,9 +23,13 @@ const EVENT_TAP_DISABLED_BY_USER_INPUT: u32 = 0xFFFF_FFFF;
 const HID_EVENT_TAP: u32 = 0;
 const HEAD_INSERT_EVENT_TAP: u32 = 0;
 const EVENT_TAP_OPTION_LISTEN_ONLY: u32 = 1;
+const HID_SYSTEM_STATE: i32 = 1;
 
 const FIELD_KEYCODE: u32 = 9;
 const FIELD_AUTOREPEAT: u32 = 8;
+
+const HOTKEY_RELEASE_POLL: Duration = Duration::from_millis(40);
+const HOTKEY_RELEASE_STAYS_UP: Duration = Duration::from_millis(80);
 
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
@@ -37,6 +44,8 @@ extern "C" {
     fn CGEventTapEnable(tap: CFTypeRef, enable: bool);
     fn CGEventGetIntegerValueField(event: *mut c_void, field: u32) -> i64;
     fn CGEventGetFlags(event: *mut c_void) -> u64;
+    fn CGEventSourceFlagsState(state_id: i32) -> u64;
+    fn CGEventSourceKeyState(state_id: i32, key_code: u16) -> u8;
     fn CGPreflightListenEventAccess() -> bool;
     fn CGRequestListenEventAccess() -> bool;
     fn CGPreflightPostEventAccess() -> bool;
@@ -59,22 +68,113 @@ extern "C" {
 struct TapContext {
     shared_config: Arc<Mutex<Config>>,
     listening_enabled: Arc<AtomicBool>,
-    on_edge: Box<dyn Fn(HotkeyEdge) + Send>,
+    on_edge: Arc<dyn Fn(HotkeyEdge) + Send + Sync>,
     tap_port: Cell<CFTypeRef>,
+    pressed: Arc<AtomicBool>,
+    release_generation: Arc<AtomicU64>,
+    release_confirm_in_flight: Arc<AtomicBool>,
 }
 
-fn deliver_edge(context: &TapContext, pressed: bool) {
-    if pressed {
-        if context.listening_enabled.load(Ordering::SeqCst) {
-            write_hotkey_log("hotkey press");
-            (context.on_edge)(HotkeyEdge::Press);
-        } else {
-            write_hotkey_log("hotkey press ignored; listening is off");
+fn macos_keycode_is_down(keycode: i64) -> bool {
+    unsafe { CGEventSourceKeyState(HID_SYSTEM_STATE, keycode as u16) != 0 }
+}
+
+fn macos_hotkey_is_held(choice: HotkeyChoice) -> bool {
+    if choice.is_modifier() {
+        let flags = unsafe { CGEventSourceFlagsState(HID_SYSTEM_STATE) };
+        if (flags & choice.macos_modifier_flag()) != 0 {
+            return true;
         }
-    } else {
-        write_hotkey_log("hotkey release");
-        (context.on_edge)(HotkeyEdge::Release);
     }
+    match choice {
+        HotkeyChoice::RightOption => macos_keycode_is_down(61) || macos_keycode_is_down(58),
+        HotkeyChoice::RightControl => macos_keycode_is_down(62) || macos_keycode_is_down(59),
+        other => macos_keycode_is_down(other.macos_keycode()),
+    }
+}
+
+fn confirm_hotkey_release_once_the_key_stays_up(
+    shared_config: Arc<Mutex<Config>>,
+    on_edge: Arc<dyn Fn(HotkeyEdge) + Send + Sync>,
+    pressed: Arc<AtomicBool>,
+    release_generation: Arc<AtomicU64>,
+    release_confirm_in_flight: Arc<AtomicBool>,
+    token: u64,
+) {
+    loop {
+        thread::sleep(HOTKEY_RELEASE_POLL);
+        if release_generation.load(Ordering::SeqCst) != token {
+            release_confirm_in_flight.store(false, Ordering::SeqCst);
+            return;
+        }
+        let choice = shared_config.lock().unwrap().hotkey;
+        if macos_hotkey_is_held(choice) {
+            continue;
+        }
+        thread::sleep(HOTKEY_RELEASE_STAYS_UP);
+        if release_generation.load(Ordering::SeqCst) != token {
+            release_confirm_in_flight.store(false, Ordering::SeqCst);
+            return;
+        }
+        let choice = shared_config.lock().unwrap().hotkey;
+        if macos_hotkey_is_held(choice) {
+            continue;
+        }
+        if pressed
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            release_confirm_in_flight.store(false, Ordering::SeqCst);
+            return;
+        }
+        if release_generation.load(Ordering::SeqCst) != token {
+            pressed.store(true, Ordering::SeqCst);
+            release_confirm_in_flight.store(false, Ordering::SeqCst);
+            return;
+        }
+        release_confirm_in_flight.store(false, Ordering::SeqCst);
+        on_edge(HotkeyEdge::Release);
+        return;
+    }
+}
+
+fn deliver_edge(context: &TapContext, incoming_pressed: bool) {
+    if incoming_pressed {
+        if !context.listening_enabled.load(Ordering::SeqCst) {
+            return;
+        }
+        if context.pressed.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        context.release_generation.fetch_add(1, Ordering::SeqCst);
+        (context.on_edge)(HotkeyEdge::Press);
+        return;
+    }
+    if !context.pressed.load(Ordering::SeqCst) {
+        return;
+    }
+    if context
+        .release_confirm_in_flight
+        .swap(true, Ordering::SeqCst)
+    {
+        return;
+    }
+    let token = context.release_generation.load(Ordering::SeqCst);
+    let shared_config = context.shared_config.clone();
+    let on_edge = context.on_edge.clone();
+    let pressed = context.pressed.clone();
+    let release_generation = context.release_generation.clone();
+    let release_confirm_in_flight = context.release_confirm_in_flight.clone();
+    thread::spawn(move || {
+        confirm_hotkey_release_once_the_key_stays_up(
+            shared_config,
+            on_edge,
+            pressed,
+            release_generation,
+            release_confirm_in_flight,
+            token,
+        );
+    });
 }
 
 extern "C" fn tap_callback(
@@ -134,13 +234,16 @@ pub fn request_post_event_access() -> bool {
 pub fn run_hotkey_tap(
     shared_config: Arc<Mutex<Config>>,
     listening_enabled: Arc<AtomicBool>,
-    on_edge: Box<dyn Fn(HotkeyEdge) + Send>,
+    on_edge: Box<dyn Fn(HotkeyEdge) + Send + Sync>,
 ) -> bool {
     let context = Box::new(TapContext {
         shared_config,
         listening_enabled,
-        on_edge,
+        on_edge: Arc::from(on_edge),
         tap_port: Cell::new(ptr::null_mut()),
+        pressed: Arc::new(AtomicBool::new(false)),
+        release_generation: Arc::new(AtomicU64::new(0)),
+        release_confirm_in_flight: Arc::new(AtomicBool::new(false)),
     });
     let context_pointer = Box::into_raw(context);
 
@@ -186,7 +289,7 @@ fn write_hotkey_log(message: &str) {
     let path = directory.join("engine.log");
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
+        .map(|duration| duration.as_millis())
         .unwrap_or(0);
     let _ = std::fs::OpenOptions::new()
         .create(true)

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 const LIVE_TRANSCRIPTION_INTERVAL: Duration = Duration::from_millis(450);
 const LIVE_TRANSCRIPT_MINIMUM_SECONDS: f32 = 0.35;
-const FINAL_TRANSCRIPT_MINIMUM_SECONDS: f32 = 0.2;
+const LIVE_PREVIEW_MINIMUM_SECONDS: f32 = 0.4;
 const CLIPBOARD_SETTLE: Duration = Duration::from_millis(50);
 const CLIPBOARD_RESTORE_AFTER_PASTE: Duration = Duration::from_millis(800);
 
@@ -36,6 +36,7 @@ pub enum DictationStatus {
 enum ControllerCommand {
     StartRecording,
     StopRecording,
+    LivePreview(String),
 }
 
 pub struct DictationEngine {
@@ -56,8 +57,14 @@ impl DictationEngine {
 
         let controller_config = shared_config.clone();
         let controller_status = report_status.clone();
+        let controller_commands = sender.clone();
         thread::spawn(move || {
-            run_dictation_controller(controller_config, receiver, controller_status);
+            run_dictation_controller(
+                controller_config,
+                controller_commands,
+                receiver,
+                controller_status,
+            );
         });
 
         spawn_hotkey_listener(
@@ -135,7 +142,7 @@ fn spawn_hotkey_listener(
                     HotkeyEdge::Release => ControllerCommand::StopRecording,
                 };
                 let _ = sender.send(command);
-            }),
+            }) as Box<dyn Fn(crate::hotkey::HotkeyEdge) + Send + Sync>,
         );
         if !created {
             write_engine_log("hotkey tap was not created; Input Monitoring is off");
@@ -209,85 +216,34 @@ fn spawn_hotkey_listener(
 
 fn run_dictation_controller(
     shared_config: Arc<Mutex<Config>>,
+    commands: Sender<ControllerCommand>,
     receiver: Receiver<ControllerCommand>,
     report_status: Arc<dyn Fn(DictationStatus) + Send + Sync>,
 ) {
-    let mut loaded_model: Option<(String, WhisperTranscriber)> = None;
+    let mut loaded_model: Option<(String, Arc<Mutex<WhisperTranscriber>>)> = None;
     let mut recording: Option<ActiveRecording> = None;
     let mut inserted_text = String::new();
+    let mut heard_while_holding = String::new();
     let mut insert_origin: Option<i64> = None;
     let mut saved_clipboard: Option<String> = None;
     let mut live_ax_insert_works = true;
     #[cfg(target_os = "macos")]
     let mut insert_target: Option<crate::mac_paste::FrontApp> = None;
     let mut silenced_output: Option<crate::output::SilencedOutput> = None;
+    let live_pass_in_flight = Arc::new(AtomicBool::new(false));
 
     loop {
         let command = if recording.is_some() {
             match receiver.recv_timeout(LIVE_TRANSCRIPTION_INTERVAL) {
                 Ok(command) => command,
                 Err(RecvTimeoutError::Timeout) => {
-                    if let Some(active) = recording.as_ref() {
-                        let corrections = shared_config.lock().unwrap().corrections.clone();
-                        if let Some(text) =
-                            transcribe_current_buffer(active, &loaded_model, &corrections)
-                        {
-                            if live_ax_insert_works
-                                && !target_is_iterm(
-                                    #[cfg(target_os = "macos")]
-                                    insert_target.as_ref(),
-                                )
-                                && !target_uses_typed_keys(
-                                    #[cfg(target_os = "macos")]
-                                    insert_target.as_ref(),
-                                )
-                            {
-                                match sync_focused_text_with_ax_only(
-                                    &inserted_text,
-                                    &text,
-                                    &mut insert_origin,
-                                ) {
-                                    Ok(()) => inserted_text = text.clone(),
-                                    Err(error) => {
-                                        write_engine_log(&format!(
-                                            "live AX insert disabled: {error}"
-                                        ));
-                                        live_ax_insert_works = false;
-                                    }
-                                }
-                            }
-                            if target_is_iterm(
-                                #[cfg(target_os = "macos")]
-                                insert_target.as_ref(),
-                            ) {
-                                match insert_text_for_target(
-                                    #[cfg(target_os = "macos")]
-                                    insert_target.as_ref(),
-                                    &inserted_text,
-                                    &text,
-                                    false,
-                                    true,
-                                ) {
-                                    Ok(
-                                        InsertKind::Iterm
-                                        | InsertKind::SystemEvents
-                                        | InsertKind::Keystroke,
-                                    ) => {
-                                        inserted_text = text.clone();
-                                    }
-                                    Ok(_) => {}
-                                    Err(error) => write_engine_log(&format!(
-                                        "live insert failed: {error}"
-                                    )),
-                                }
-                            }
-                            report_status(DictationStatus::Partial(text.clone()));
-                            #[cfg(target_os = "macos")]
-                            if insert_target.as_ref().is_some_and(|app| app.is_ours()) {
-                                report_status(DictationStatus::SettingsPreview(text));
-                            }
-                        }
-                    }
+                    start_live_preview_pass(
+                        recording.as_ref(),
+                        &loaded_model,
+                        &shared_config,
+                        &live_pass_in_flight,
+                        &commands,
+                    );
                     continue;
                 }
                 Err(RecvTimeoutError::Disconnected) => break,
@@ -318,6 +274,7 @@ fn run_dictation_controller(
                             ));
                             recording = Some(active);
                             inserted_text.clear();
+                            heard_while_holding.clear();
                             insert_origin = None;
                             live_ax_insert_works = true;
                             saved_clipboard = read_clipboard_text();
@@ -374,6 +331,7 @@ fn run_dictation_controller(
                         &shared_config,
                         &mut loaded_model,
                         &inserted_text,
+                        &heard_while_holding,
                         &mut insert_origin,
                         #[cfg(target_os = "macos")]
                         insert_target.as_ref(),
@@ -407,57 +365,195 @@ fn run_dictation_controller(
                         restore_clipboard_text(saved);
                     }
                     inserted_text.clear();
+                    heard_while_holding.clear();
                     insert_origin = None;
                 }
+            }
+            ControllerCommand::LivePreview(text) => {
+                if recording.is_none() {
+                    continue;
+                }
+                heard_while_holding = text.clone();
+                apply_live_preview(
+                    &text,
+                    &mut inserted_text,
+                    &mut insert_origin,
+                    &mut live_ax_insert_works,
+                    #[cfg(target_os = "macos")]
+                    insert_target.as_ref(),
+                    report_status.as_ref(),
+                );
             }
         }
     }
 }
 
 fn should_skip_typing(audio: &[f32], spoken: &str) -> bool {
-    if spoken.is_empty() {
+    if spoken.trim().is_empty() {
         return true;
     }
-    let minimum_samples = (WHISPER_SAMPLE_RATE as f32 * FINAL_TRANSCRIPT_MINIMUM_SECONDS) as usize;
-    if audio.len() < minimum_samples {
+    if crate::transcribe::transcript_is_a_whisper_blank_phrase(spoken) {
         return true;
     }
-    clip_is_quieter_than_speech(audio) && !clip_has_a_speech_peak(audio)
+    let too_quiet = clip_is_quieter_than_speech(audio) && !clip_has_a_speech_peak(audio);
+    if !too_quiet {
+        return false;
+    }
+    crate::transcribe::transcript_is_only_thank_you(spoken)
+        || !spoken.chars().any(|character| character.is_ascii_alphanumeric())
 }
 
-fn transcribe_current_buffer(
-    active: &ActiveRecording,
-    loaded_model: &Option<(String, WhisperTranscriber)>,
+fn start_live_preview_pass(
+    recording: Option<&ActiveRecording>,
+    loaded_model: &Option<(String, Arc<Mutex<WhisperTranscriber>>)>,
+    shared_config: &Arc<Mutex<Config>>,
+    live_pass_in_flight: &Arc<AtomicBool>,
+    commands: &Sender<ControllerCommand>,
+) {
+    let Some(active) = recording else {
+        return;
+    };
+    let Some((_, transcriber)) = loaded_model.clone() else {
+        return;
+    };
+    if live_pass_in_flight.load(Ordering::SeqCst) {
+        return;
+    }
+    let captured = active.samples_handle().lock().unwrap().clone();
+    let sample_rate = active.sample_rate();
+    let channels = active.channels();
+    let captured_seconds =
+        captured.len() as f32 / (sample_rate as f32 * channels.max(1) as f32);
+    if captured_seconds < LIVE_PREVIEW_MINIMUM_SECONDS {
+        return;
+    }
+    if live_pass_in_flight
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    let corrections = shared_config.lock().unwrap().corrections.clone();
+    let in_flight = live_pass_in_flight.clone();
+    let commands = commands.clone();
+    thread::spawn(move || {
+        let text = match transcriber.try_lock() {
+            Ok(transcriber) => transcribe_captured_samples(
+                &captured,
+                sample_rate,
+                channels,
+                &transcriber,
+                &corrections,
+            ),
+            Err(_) => None,
+        };
+        if let Some(text) = text {
+            let _ = commands.send(ControllerCommand::LivePreview(text));
+        }
+        in_flight.store(false, Ordering::SeqCst);
+    });
+}
+
+fn apply_live_preview(
+    text: &str,
+    inserted_text: &mut String,
+    insert_origin: &mut Option<i64>,
+    live_ax_insert_works: &mut bool,
+    #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
+    report_status: &(dyn Fn(DictationStatus) + Send + Sync),
+) {
+    report_status(DictationStatus::Partial(text.to_string()));
+    #[cfg(target_os = "macos")]
+    if insert_target.is_some_and(|app| app.is_ours()) {
+        report_status(DictationStatus::SettingsPreview(text.to_string()));
+    }
+    if *live_ax_insert_works
+        && !target_is_iterm(
+            #[cfg(target_os = "macos")]
+            insert_target,
+        )
+        && !target_uses_typed_keys(
+            #[cfg(target_os = "macos")]
+            insert_target,
+        )
+    {
+        match sync_focused_text_with_ax_only(inserted_text, text, insert_origin) {
+            Ok(()) => *inserted_text = text.to_string(),
+            Err(error) => {
+                write_engine_log(&format!("live AX insert disabled: {error}"));
+                *live_ax_insert_works = false;
+            }
+        }
+    }
+    if target_is_iterm(
+        #[cfg(target_os = "macos")]
+        insert_target,
+    ) {
+        match insert_text_for_target(
+            #[cfg(target_os = "macos")]
+            insert_target,
+            inserted_text,
+            text,
+            false,
+            true,
+        ) {
+            Ok(InsertKind::Iterm | InsertKind::SystemEvents | InsertKind::Keystroke) => {
+                *inserted_text = text.to_string();
+            }
+            Ok(_) => {}
+            Err(error) => write_engine_log(&format!("live insert failed: {error}")),
+        }
+    }
+}
+
+fn transcribe_captured_samples(
+    captured: &[f32],
+    sample_rate: u32,
+    channels: u16,
+    transcriber: &WhisperTranscriber,
     corrections: &[Correction],
 ) -> Option<String> {
-    let transcriber = &loaded_model.as_ref()?.1;
-    let captured = active.samples_handle().lock().unwrap().clone();
-    let minimum_samples = ((active.sample_rate() as f32 * LIVE_TRANSCRIPT_MINIMUM_SECONDS)
-        * active.channels() as f32) as usize;
+    let minimum_samples =
+        ((sample_rate as f32 * LIVE_TRANSCRIPT_MINIMUM_SECONDS) * channels as f32) as usize;
     if captured.len() < minimum_samples {
         return None;
     }
-    let mono = downmix_to_mono(&captured, active.channels());
-    let resampled = resample_linear(&mono, active.sample_rate(), WHISPER_SAMPLE_RATE);
+    let mono = downmix_to_mono(captured, channels);
+    let resampled = resample_linear(&mono, sample_rate, WHISPER_SAMPLE_RATE);
     let audio = trim_quiet_edges(&resampled);
     let transcript = transcriber.transcribe(audio).ok()?;
     let regional = apply_locale_english_spelling(transcript.trim());
     let corrected = apply_corrections(&regional, corrections);
     let trimmed = corrected.trim();
-    if should_skip_typing(audio, trimmed) {
+    if trimmed.is_empty() || transcript_is_a_whisper_blank_phrase(trimmed) {
         return None;
     }
-    if transcript_is_a_whisper_blank_phrase(trimmed) {
+    let shown = without_trailing_ellipsis(trimmed);
+    if shown.is_empty() {
         return None;
     }
-    Some(trimmed.to_string())
+    write_engine_log(&format!("live preview chars={}", shown.chars().count()));
+    Some(shown.to_string())
+}
+
+fn without_trailing_ellipsis(text: &str) -> &str {
+    text.trim_end()
+        .trim_end_matches("...")
+        .trim_end_matches('…')
+        .trim_end()
+}
+
+fn transcript_looks_cut_short(text: &str) -> bool {
+    let trimmed = text.trim_end();
+    trimmed.ends_with("...") || trimmed.ends_with('…')
 }
 
 fn transcribe_and_type(
     active: ActiveRecording,
     shared_config: &Arc<Mutex<Config>>,
-    loaded_model: &mut Option<(String, WhisperTranscriber)>,
+    loaded_model: &mut Option<(String, Arc<Mutex<WhisperTranscriber>>)>,
     already_inserted: &str,
+    heard_while_holding: &str,
     insert_origin: &mut Option<i64>,
     #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
     report_status: &(dyn Fn(DictationStatus) + Send + Sync),
@@ -474,44 +570,75 @@ fn transcribe_and_type(
         return Ok(());
     }
     let mono = downmix_to_mono(&samples, channels);
-    let resampled = resample_linear(&mono, sample_rate, WHISPER_SAMPLE_RATE);
-    let audio = trim_quiet_edges(&resampled).to_vec();
+    let audio = resample_linear(&mono, sample_rate, WHISPER_SAMPLE_RATE);
 
-    report_status(DictationStatus::Transcribing);
+    let heard = without_trailing_ellipsis(heard_while_holding);
+    let mut typed_so_far = already_inserted.to_string();
+    let live_text_is_cut_short = transcript_looks_cut_short(heard_while_holding);
+    if typed_so_far.is_empty()
+        && !heard.is_empty()
+        && !live_text_is_cut_short
+        && !target_uses_typed_keys(
+            #[cfg(target_os = "macos")]
+            insert_target,
+        )
+    {
+        write_engine_log(&format!(
+            "typing buffered live transcript chars={}",
+            heard.chars().count()
+        ));
+        sync_focused_text_to_transcript(
+            "",
+            heard,
+            insert_origin,
+            #[cfg(target_os = "macos")]
+            insert_target,
+        )?;
+        typed_so_far = heard.to_string();
+        report_status(DictationStatus::Partial(typed_so_far.clone()));
+    } else {
+        report_status(DictationStatus::Transcribing);
+    }
 
     let config = shared_config.lock().unwrap().clone();
     ensure_model_loaded(loaded_model, &config.model_file_name)?;
-    let transcriber = &loaded_model
+    let transcriber = loaded_model
         .as_ref()
         .ok_or_else(|| anyhow!("model was not loaded"))?
-        .1;
-    let raw_transcript = transcriber.transcribe(&audio)?;
+        .1
+        .lock()
+        .unwrap();
+    let raw_transcript = transcriber.transcribe_the_whole_clip(&audio)?;
+    drop(transcriber);
     let regional = apply_locale_english_spelling(raw_transcript.trim());
     let corrected = apply_corrections(&regional, &config.corrections);
     let spoken = corrected.trim();
 
-    if already_inserted.is_empty()
+    if typed_so_far.is_empty()
         && (should_skip_typing(&audio, spoken) || transcript_is_a_whisper_blank_phrase(spoken))
     {
         write_engine_log(&format!(
-            "transcript discarded spoken={spoken:?} rms={}",
-            crate::audio::root_mean_square_amplitude(&audio)
+            "transcript discarded spoken={spoken:?} rms={} samples={}",
+            crate::audio::root_mean_square_amplitude(&audio),
+            audio.len()
         ));
         report_status(DictationStatus::Idle);
         return Ok(());
     }
 
-    let spoken = if final_pass_threw_away_the_spoken_words(already_inserted, spoken) {
+    let spoken = if final_pass_threw_away_the_spoken_words(&typed_so_far, spoken)
+        || (transcript_looks_cut_short(spoken) && !typed_so_far.is_empty())
+    {
         write_engine_log(&format!(
             "kept live transcript; final pass was {spoken:?}"
         ));
-        already_inserted
+        typed_so_far.clone()
     } else if spoken.is_empty() {
-        already_inserted
-    } else if transcript_is_a_whisper_blank_phrase(spoken) && !already_inserted.is_empty() {
-        already_inserted
+        typed_so_far.clone()
+    } else if transcript_is_a_whisper_blank_phrase(spoken) && !typed_so_far.is_empty() {
+        typed_so_far.clone()
     } else {
-        spoken
+        spoken.to_string()
     };
 
     if spoken.is_empty() {
@@ -520,8 +647,8 @@ fn transcribe_and_type(
     }
 
     let insert_kind = sync_focused_text_to_transcript(
-        already_inserted,
-        spoken,
+        &typed_so_far,
+        &spoken,
         insert_origin,
         #[cfg(target_os = "macos")]
         insert_target,
@@ -890,7 +1017,7 @@ fn write_engine_log(message: &str) {
     let path = directory.join("engine.log");
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
+        .map(|duration| duration.as_millis())
         .unwrap_or(0);
     let _ = std::fs::OpenOptions::new()
         .create(true)
@@ -928,7 +1055,7 @@ fn post_return_keystroke() -> Result<()> {
 }
 
 fn ensure_model_loaded(
-    loaded_model: &mut Option<(String, WhisperTranscriber)>,
+    loaded_model: &mut Option<(String, Arc<Mutex<WhisperTranscriber>>)>,
     model_file_name: &str,
 ) -> Result<()> {
     let already_loaded = loaded_model
@@ -941,6 +1068,54 @@ fn ensure_model_loaded(
     let path = resolve_model_path(model_file_name)?;
     let path_text = path.to_string_lossy().to_string();
     let transcriber = WhisperTranscriber::load_from_path(&path_text)?;
-    *loaded_model = Some((model_file_name.to_string(), transcriber));
+    *loaded_model = Some((
+        model_file_name.to_string(),
+        Arc::new(Mutex::new(transcriber)),
+    ));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{should_skip_typing, transcript_looks_cut_short, without_trailing_ellipsis};
+
+    #[test]
+    fn a_quiet_thank_you_is_not_typed() {
+        let audio = vec![0.0; 8000];
+        assert!(should_skip_typing(&audio, "Thank you."));
+    }
+
+    #[test]
+    fn a_quiet_real_sentence_is_typed() {
+        let audio = vec![0.0; 8000];
+        assert!(!should_skip_typing(&audio, "That's all."));
+    }
+
+    #[test]
+    fn loud_punctuation_is_typed() {
+        let audio = vec![0.2; 8000];
+        assert!(!should_skip_typing(&audio, "(, )."));
+    }
+
+    #[test]
+    fn a_quiet_period_is_not_typed() {
+        let audio = vec![0.0; 8000];
+        assert!(should_skip_typing(&audio, "."));
+    }
+
+    #[test]
+    fn empty_speech_is_not_typed() {
+        let audio = vec![0.2; 8000];
+        assert!(should_skip_typing(&audio, "  "));
+    }
+
+    #[test]
+    fn trailing_ellipsis_is_treated_as_cut_short() {
+        assert!(transcript_looks_cut_short("the things that..."));
+        assert_eq!(
+            without_trailing_ellipsis("the things that..."),
+            "the things that"
+        );
+        assert!(!transcript_looks_cut_short("the things that"));
+    }
 }

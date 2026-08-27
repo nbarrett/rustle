@@ -1,6 +1,7 @@
 use std::os::raw::c_void;
 
 const AUDIO_OBJECT_SYSTEM: u32 = 1;
+const AUDIO_HARDWARE_PROPERTY_DEFAULT_INPUT_DEVICE: u32 = u32::from_be_bytes(*b"dIn ");
 const AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE: u32 = u32::from_be_bytes(*b"dOut");
 const AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL: u32 = u32::from_be_bytes(*b"glob");
 const AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN: u32 = 0;
@@ -38,9 +39,9 @@ extern "C" {
 
 pub use crate::output::SilencedOutput;
 
-fn default_output_device() -> Option<u32> {
+fn default_audio_device(selector: u32) -> Option<u32> {
     let address = AudioObjectPropertyAddress {
-        selector: AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE,
+        selector,
         scope: AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL,
         element: AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN,
     };
@@ -60,6 +61,21 @@ fn default_output_device() -> Option<u32> {
         Some(device)
     } else {
         None
+    }
+}
+
+fn default_output_device() -> Option<u32> {
+    default_audio_device(AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE)
+}
+
+fn default_input_device() -> Option<u32> {
+    default_audio_device(AUDIO_HARDWARE_PROPERTY_DEFAULT_INPUT_DEVICE)
+}
+
+fn default_input_and_output_are_the_same_device() -> bool {
+    match (default_input_device(), default_output_device()) {
+        (Some(input), Some(output)) => input == output,
+        _ => false,
     }
 }
 
@@ -168,6 +184,9 @@ fn write_volume(device: u32, volume: f32) -> bool {
 }
 
 pub fn silence_system_output() -> Option<SilencedOutput> {
+    if default_input_and_output_are_the_same_device() {
+        return None;
+    }
     let device = default_output_device()?;
     if let Some(true) = read_mute(device) {
         return Some(SilencedOutput::AlreadySilent);
