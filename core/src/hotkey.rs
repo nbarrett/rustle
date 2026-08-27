@@ -24,7 +24,7 @@ pub enum HotkeyChoice {
 impl HotkeyChoice {
     pub fn label(self) -> &'static str {
         match self {
-            HotkeyChoice::Function => "fn (Globe)",
+            HotkeyChoice::Function => "🌐 Globe (fn)",
             HotkeyChoice::RightOption => {
                 if cfg!(target_os = "macos") {
                     "Right Option"

@@ -9,23 +9,29 @@ use rustle_core::download::download_model_file;
 use rustle_core::engine::{DictationEngine, DictationStatus};
 use rustle_core::hotkey::{HotkeyChoice, HotkeyOption};
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::menu::{Menu, MenuItem};
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri_plugin_autostart::{AutoLaunchManager, MacosLauncher};
 
 const LAUNCHED_AT_LOGIN_ARGUMENT: &str = "--launched-at-login";
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod overlay;
 #[cfg(target_os = "macos")]
 mod mac_setup;
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use overlay::DictationOverlay;
 
 struct EngineState {
     engine: DictationEngine,
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 struct FeedbackState {
     overlay: DictationOverlay,
     tray: TrayIcon,
@@ -89,9 +95,16 @@ fn save_and_apply_config(
 }
 
 fn apply_launch_at_login(app: &AppHandle, enabled: bool) {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        let _ = (app, enabled);
+        return;
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let Some(manager) = app.try_state::<AutoLaunchManager>() else {
         return;
     };
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let _ = catch_unwind(AssertUnwindSafe(|| {
         let _ = if enabled {
             manager.enable()
@@ -289,7 +302,7 @@ fn process_was_started_as_login_item() -> bool {
     std::env::args().any(|argument| argument == LAUNCHED_AT_LOGIN_ARGUMENT)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
 fn create_hud_window(app: &mut tauri::App) {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
     let _ = WebviewWindowBuilder::new(app, "hud", WebviewUrl::App("hud.html".into()))
@@ -313,11 +326,57 @@ fn create_hud_window(app: &mut tauri::App) {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn keep_settings_window_above_full_screen_apps(window: &tauri::WebviewWindow) {
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_visible_on_all_workspaces(true);
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{
+            NSStatusWindowLevel, NSWindowCollectionBehavior, NSWindowStyleMask,
+        };
+        let Ok(raw) = window.ns_window() else {
+            return;
+        };
+        if objc2::MainThreadMarker::new().is_none() {
+            return;
+        }
+        let ns_window: &objc2_app_kit::NSWindow = unsafe { &*raw.cast() };
+        ns_window.setStyleMask(
+            ns_window
+                .styleMask()
+                .union(NSWindowStyleMask::NonactivatingPanel),
+        );
+        ns_window.setHidesOnDeactivate(false);
+        ns_window.setLevel(NSStatusWindowLevel);
+        ns_window.setCollectionBehavior(
+            NSWindowCollectionBehavior::CanJoinAllSpaces
+                .union(NSWindowCollectionBehavior::FullScreenAuxiliary)
+                .union(NSWindowCollectionBehavior::IgnoresCycle),
+        );
+        ns_window.orderFrontRegardless();
+    }
+}
+
 pub(crate) fn reveal_settings_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        keep_settings_window_above_full_screen_apps(&window);
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         let _ = window.unminimize();
         let _ = window.show();
-        let _ = window.set_focus();
+        #[cfg(all(
+            not(target_os = "macos"),
+            not(target_os = "ios"),
+            not(target_os = "android")
+        ))]
+        {
+            let _ = window.set_focus();
+        }
+        #[cfg(target_os = "macos")]
+        {
+            keep_settings_window_above_full_screen_apps(&window);
+        }
     }
 }
 
@@ -327,6 +386,7 @@ fn conceal_settings_window(app: &AppHandle) {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn build_tray_icon(app: &tauri::App) -> Result<TrayIcon, Box<dyn std::error::Error>> {
     let open_item = MenuItem::with_id(app, "open", "Open Rustle Settings", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit Rustle", true, None::<&str>)?;
@@ -362,14 +422,18 @@ fn build_tray_icon(app: &tauri::App) -> Result<TrayIcon, Box<dyn std::error::Err
 }
 
 fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            Some(vec![LAUNCHED_AT_LOGIN_ARGUMENT]),
-        ))
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_dialog::init())
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        builder = builder
+            .plugin(tauri_plugin_autostart::init(
+                MacosLauncher::LaunchAgent,
+                Some(vec![LAUNCHED_AT_LOGIN_ARGUMENT]),
+            ))
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .plugin(tauri_plugin_process::init());
+    }
+    builder
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -394,37 +458,54 @@ fn main() {
             let engine = DictationEngine::start(config, move |status| {
                 eprintln!("[rustle] {status:?}");
                 let _ = status_app.emit("dictation-status", describe_status(&status));
-                let app = status_app.clone();
-                let ui_app = app.clone();
-                let status = status.clone();
-                overlay::run_on_ui_thread(&app, move || {
-                    if let Some(feedback) = ui_app.try_state::<FeedbackState>() {
-                        feedback.overlay.apply(&ui_app, &feedback.tray, &status);
-                    }
-                });
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                {
+                    let app = status_app.clone();
+                    let ui_app = app.clone();
+                    let status = status.clone();
+                    overlay::run_on_ui_thread(&app, move || {
+                        if let Some(feedback) = ui_app.try_state::<FeedbackState>() {
+                            feedback.overlay.apply(&ui_app, &feedback.tray, &status);
+                        }
+                    });
+                }
             })
             .map_err(|error| error.to_string())?;
             app.manage(Mutex::new(EngineState { engine }));
 
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
             create_hud_window(app);
-            let overlay = DictationOverlay::create();
-            let tray = build_tray_icon(app)?;
-            app.manage(FeedbackState {
-                overlay,
-                tray: tray.clone(),
-            });
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                let overlay = DictationOverlay::create();
+                let tray = build_tray_icon(app)?;
+                app.manage(FeedbackState {
+                    overlay,
+                    tray: tray.clone(),
+                });
+            }
+            if let Some(window) = app.get_webview_window("settings") {
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                keep_settings_window_above_full_screen_apps(&window);
+                #[cfg(any(target_os = "ios", target_os = "android"))]
+                {
+                    let _ = window.show();
+                }
+            }
             #[cfg(target_os = "macos")]
             mac_setup::follow_permission_grants_and_relaunch(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "settings" {
                     api.prevent_close();
                     conceal_settings_window(window.app_handle());
                 }
             }
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
             get_app_version,

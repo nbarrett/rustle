@@ -44,6 +44,20 @@ enum ControllerCommand {
     LivePreview(String),
 }
 
+struct FinishedClip {
+    samples: Vec<f32>,
+    sample_rate: u32,
+    channels: u16,
+    heard: String,
+    inserted: String,
+    insert_origin: Option<i64>,
+    #[cfg(target_os = "macos")]
+    insert_target: Option<crate::mac_paste::FrontApp>,
+    saved_clipboard: Option<String>,
+    delay_clipboard_restore: bool,
+    transcriber: Arc<Mutex<WhisperTranscriber>>,
+}
+
 pub struct DictationEngine {
     shared_config: Arc<Mutex<Config>>,
     listening_enabled: Arc<AtomicBool>,
@@ -190,7 +204,17 @@ fn spawn_hotkey_listener(
     });
 }
 
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn spawn_hotkey_listener(
+    shared_config: Arc<Mutex<Config>>,
+    listening_enabled: Arc<AtomicBool>,
+    report_status: Arc<dyn Fn(DictationStatus) + Send + Sync>,
+    sender: Sender<ControllerCommand>,
+) {
+    let _ = (shared_config, listening_enabled, report_status, sender);
+}
+
+#[cfg(target_os = "linux")]
 fn spawn_hotkey_listener(
     shared_config: Arc<Mutex<Config>>,
     listening_enabled: Arc<AtomicBool>,
@@ -236,6 +260,12 @@ fn run_dictation_controller(
     let mut insert_target: Option<crate::mac_paste::FrontApp> = None;
     let mut silenced_output: Option<crate::output::SilencedOutput> = None;
     let live_pass_in_flight = Arc::new(AtomicBool::new(false));
+    let recording_active = Arc::new(AtomicBool::new(false));
+    let finished_clips = spawn_clip_transcribe_worker(
+        shared_config.clone(),
+        report_status.clone(),
+        recording_active.clone(),
+    );
 
     loop {
         let command = if recording.is_some() {
@@ -273,11 +303,16 @@ fn run_dictation_controller(
                     }
                     match start_recording(config.input_device_name.as_deref()) {
                         Ok(active) => {
-                            silenced_output = crate::output::silence_system_output();
+                            silenced_output = if config.silence_other_audio_while_holding {
+                                crate::output::silence_system_output()
+                            } else {
+                                None
+                            };
                             write_engine_log(&format!(
                                 "system output silenced={silenced_output:?}"
                             ));
                             recording = Some(active);
+                            recording_active.store(true, Ordering::SeqCst);
                             inserted_text.clear();
                             heard_while_holding.clear();
                             insert_origin = None;
@@ -349,27 +384,17 @@ fn run_dictation_controller(
                     continue;
                 }
                 if let Some(active) = recording.take() {
+                    recording_active.store(false, Ordering::SeqCst);
                     if let Some(saved) = silenced_output.take() {
                         crate::output::restore_system_output(saved);
                     }
-                    let typed = transcribe_and_type(
-                        active,
-                        &shared_config,
-                        &mut loaded_model,
-                        &inserted_text,
-                        &heard_while_holding,
-                        &mut insert_origin,
-                        #[cfg(target_os = "macos")]
-                        insert_target.as_ref(),
-                        report_status.as_ref(),
-                    );
-                    #[cfg(target_os = "windows")]
-                    crate::win_insert::forget_front_window();
-                    if let Err(error) = typed {
-                        write_engine_log(&format!("final insert failed: {error}"));
-                        report_insert_problem(report_status.as_ref(), &error);
-                    }
-                    let saved = saved_clipboard.take();
+                    let Some((_, transcriber)) = loaded_model.clone() else {
+                        report_status(DictationStatus::Failed(
+                            "model was not loaded".to_string(),
+                        ));
+                        continue;
+                    };
+                    let (samples, sample_rate, channels) = stop_recording(active);
                     let delay_clipboard_restore = {
                         #[cfg(target_os = "macos")]
                         {
@@ -382,14 +407,23 @@ fn run_dictation_controller(
                             true
                         }
                     };
-                    if delay_clipboard_restore {
-                        thread::spawn(move || {
-                            thread::sleep(CLIPBOARD_RESTORE_AFTER_PASTE);
-                            restore_clipboard_text(saved);
-                        });
-                    } else {
-                        restore_clipboard_text(saved);
-                    }
+                    write_engine_log(&format!(
+                        "queued clip samples={} rate={sample_rate} channels={channels}",
+                        samples.len()
+                    ));
+                    let _ = finished_clips.send(FinishedClip {
+                        samples,
+                        sample_rate,
+                        channels,
+                        heard: heard_while_holding.clone(),
+                        inserted: inserted_text.clone(),
+                        insert_origin,
+                        #[cfg(target_os = "macos")]
+                        insert_target: insert_target.clone(),
+                        saved_clipboard: saved_clipboard.take(),
+                        delay_clipboard_restore,
+                        transcriber,
+                    });
                     inserted_text.clear();
                     heard_while_holding.clear();
                     insert_origin = None;
@@ -713,25 +747,75 @@ fn transcript_looks_cut_short(text: &str) -> bool {
     trimmed.ends_with("...") || trimmed.ends_with('…')
 }
 
+fn spawn_clip_transcribe_worker(
+    shared_config: Arc<Mutex<Config>>,
+    report_status: Arc<dyn Fn(DictationStatus) + Send + Sync>,
+    recording_active: Arc<AtomicBool>,
+) -> Sender<FinishedClip> {
+    let (sender, receiver) = mpsc::channel::<FinishedClip>();
+    thread::spawn(move || {
+        while let Ok(clip) = receiver.recv() {
+            let mut insert_origin = clip.insert_origin;
+            let typed = transcribe_and_type(
+                clip.samples,
+                clip.sample_rate,
+                clip.channels,
+                &shared_config,
+                clip.transcriber,
+                &clip.inserted,
+                &clip.heard,
+                &mut insert_origin,
+                #[cfg(target_os = "macos")]
+                clip.insert_target.as_ref(),
+                report_status.as_ref(),
+                recording_active.as_ref(),
+            );
+            #[cfg(target_os = "windows")]
+            if !recording_active.load(Ordering::SeqCst) {
+                crate::win_insert::forget_front_window();
+            }
+            if let Err(error) = typed {
+                write_engine_log(&format!("final insert failed: {error}"));
+                if !recording_active.load(Ordering::SeqCst) {
+                    report_insert_problem(report_status.as_ref(), &error);
+                }
+            }
+            if clip.delay_clipboard_restore {
+                thread::spawn(move || {
+                    thread::sleep(CLIPBOARD_RESTORE_AFTER_PASTE);
+                    restore_clipboard_text(clip.saved_clipboard);
+                });
+            } else {
+                restore_clipboard_text(clip.saved_clipboard);
+            }
+        }
+    });
+    sender
+}
+
 fn transcribe_and_type(
-    active: ActiveRecording,
+    samples: Vec<f32>,
+    sample_rate: u32,
+    channels: u16,
     shared_config: &Arc<Mutex<Config>>,
-    loaded_model: &mut Option<(String, Arc<Mutex<WhisperTranscriber>>)>,
+    transcriber: Arc<Mutex<WhisperTranscriber>>,
     already_inserted: &str,
     heard_while_holding: &str,
     insert_origin: &mut Option<i64>,
     #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
     report_status: &(dyn Fn(DictationStatus) + Send + Sync),
+    recording_active: &AtomicBool,
 ) -> Result<()> {
-    let (samples, sample_rate, channels) = stop_recording(active);
     write_engine_log(&format!(
         "captured samples={} rate={sample_rate} channels={channels}",
         samples.len()
     ));
     if samples.is_empty() {
-        report_status(DictationStatus::Failed(
-            "The microphone produced no audio. If you were speaking, enable Rustle in Microphone settings.".to_string(),
-        ));
+        if !recording_active.load(Ordering::SeqCst) {
+            report_status(DictationStatus::Failed(
+                "The microphone produced no audio. If you were speaking, enable Rustle in Microphone settings.".to_string(),
+            ));
+        }
         return Ok(());
     }
     let mono = downmix_to_mono(&samples, channels);
@@ -741,14 +825,12 @@ fn transcribe_and_type(
         heard_while_holding,
     ));
     let typed_so_far = already_inserted.to_string();
-    report_status(DictationStatus::Transcribing);
+    if !recording_active.load(Ordering::SeqCst) {
+        report_status(DictationStatus::Transcribing);
+    }
 
     let config = shared_config.lock().unwrap().clone();
-    ensure_model_loaded(loaded_model, &config.model_file_name)?;
-    let transcriber_slot = loaded_model
-        .as_ref()
-        .ok_or_else(|| anyhow!("model was not loaded"))?;
-    let transcriber = transcriber_slot.1.lock().unwrap();
+    let transcriber = transcriber.lock().unwrap();
     let raw_transcript = transcriber.transcribe_the_whole_clip(&audio)?;
     drop(transcriber);
     let regional = apply_locale_english_spelling(raw_transcript.trim());
@@ -770,7 +852,9 @@ fn transcribe_and_type(
             crate::audio::root_mean_square_amplitude(&audio),
             audio.len()
         ));
-        report_status(DictationStatus::Idle);
+        if !recording_active.load(Ordering::SeqCst) {
+            report_status(DictationStatus::Idle);
+        }
         return Ok(());
     }
 
@@ -784,7 +868,9 @@ fn transcribe_and_type(
     }
 
     if spoken.is_empty() {
-        report_status(DictationStatus::Idle);
+        if !recording_active.load(Ordering::SeqCst) {
+            report_status(DictationStatus::Idle);
+        }
         return Ok(());
     }
 

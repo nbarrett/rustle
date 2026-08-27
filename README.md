@@ -2,7 +2,7 @@
 
 Open-source, local, **Rust** dictation. A Wispr Flow replacement you own.
 
-**[Download for your computer](https://nbarrett.github.io/rustle/)** — macOS, Windows, or Linux. The page picks the file that matches the machine you are on.
+**[Download for your computer](https://nbarrett.github.io/rustle/)** — macOS, Windows, or Linux. The page picks the file that matches the machine you are on. Phone builds (iOS and Android) are in the repo as a hold-to-talk app: same on-device Whisper, then copy the text into whatever you are writing.
 
 Your voice is transcribed by Whisper **on your own machine** and never leaves it, so it is private, free, and impossible to rate-limit. The experience is the Wispr Flow one: hold a hotkey, talk, and the text appears in whatever app you are using.
 
@@ -110,7 +110,22 @@ Config and downloaded models are stored under the OS app-data folder: `~/Library
 2. **Type anywhere** *(done)* - global hotkey plus keystroke injection into the focused app.
 3. **Cleanup pass** *(planned)* - run the raw transcript through a local LLM (Ollama) to strip filler, fix punctuation, and apply a custom vocabulary.
 4. **Menu-bar app** *(done - you are here)* - a Tauri tray app with settings, a model picker, and launch-at-login.
-5. **Ship it** - MIT on GitHub, so no one can ever switch it off.
+5. **Phone** *(started)* - iOS and Android hold-to-talk in the Rustle app, then copy. A system keyboard that types into other apps is later work; phones do not allow a Globe hotkey.
+6. **Ship it** - MIT on GitHub, so no one can ever switch it off.
+
+### Phone (iOS and Android)
+
+Phones cannot do hold-Globe-and-type-into-Mail. The phone app is a pad: hold the button, speak, copy the transcript.
+
+```bash
+rustup target add aarch64-apple-ios aarch64-linux-android
+npx tauri ios init
+npx tauri android init
+npx tauri ios dev
+npx tauri android dev
+```
+
+iOS needs Xcode and your Apple Development team (`93S4343SAT` is already in `src-tauri/tauri.ios.conf.json`). Android needs Android Studio / NDK. First run downloads a Whisper model on the device; start with base.en.
 
 ## Why this exists
 

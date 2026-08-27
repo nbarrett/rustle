@@ -1,10 +1,20 @@
+#[cfg(not(target_os = "macos"))]
+fn main() {}
+
+#[cfg(target_os = "macos")]
 use anyhow::{anyhow, Result};
+#[cfg(target_os = "macos")]
 use rustle_core::mac_ax;
+#[cfg(target_os = "macos")]
 use rustle_core::mac_paste;
+#[cfg(target_os = "macos")]
 use std::env;
+#[cfg(target_os = "macos")]
 use std::process::ExitCode;
+#[cfg(target_os = "macos")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(target_os = "macos")]
 fn main() -> ExitCode {
     match run_probe() {
         Ok(()) => {
@@ -18,6 +28,7 @@ fn main() -> ExitCode {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn run_probe() -> Result<()> {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)

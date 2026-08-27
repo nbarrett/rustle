@@ -24,6 +24,11 @@
 
       <div class="body">
         <section class="tab-panel is-active" id="panel-dictation">
+          <div id="hold-pad" class="hold-pad" hidden>
+            <button id="hold-to-talk" class="hold-to-talk" type="button">Hold to talk</button>
+            <p class="field-hint" id="hold-pad-hint">Hold, speak, let go. Copy the text into any app.</p>
+            <button id="copy-transcript" class="secondary" type="button">Copy transcript</button>
+          </div>
           <div id="setup-banner" class="setup-banner" hidden>
             <p class="field-label">Finish setup</p>
             <p class="field-hint" id="setup-note">Rustle needs a couple of Mac permissions before it can type into other apps.</p>
@@ -44,7 +49,7 @@
             <p class="field-hint">Words still go into the app you are using. This box keeps the last text.</p>
           </div>
 
-          <div class="field">
+          <div class="field desktop-only">
             <label class="field-label" for="dictation-toggle">Dictation</label>
             <label class="switch">
               <input type="checkbox" id="dictation-toggle" checked />
@@ -53,7 +58,7 @@
             </label>
           </div>
 
-          <div class="field">
+          <div class="field desktop-only">
             <label class="field-label" for="hotkey-select">Push-to-talk key</label>
             <select id="hotkey-select">
               <option value="RightControl">Right Control</option>
@@ -71,7 +76,17 @@
             </select>
           </div>
 
-          <div class="field">
+          <div class="field desktop-only">
+            <label class="field-label" for="silence-audio-toggle">Other audio</label>
+            <label class="switch">
+              <input type="checkbox" id="silence-audio-toggle" checked />
+              <span class="switch-track"></span>
+              <span class="switch-caption" id="silence-audio-caption">Mute other audio while you hold</span>
+            </label>
+            <p class="field-hint" id="silence-audio-hint">Turn this off to transcribe YouTube or the radio playing on this machine. The microphone still has to hear it.</p>
+          </div>
+
+          <div class="field desktop-only">
             <label class="field-label" for="enter-toggle">After dictation</label>
             <label class="switch">
               <input type="checkbox" id="enter-toggle" />
@@ -137,7 +152,7 @@
             <p class="field-hint" id="download-status"></p>
           </div>
 
-          <div class="field">
+          <div class="field desktop-only">
             <label class="field-label" for="launch-toggle">Startup</label>
             <label class="switch">
               <input type="checkbox" id="launch-toggle" />

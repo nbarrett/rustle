@@ -1,0 +1,467 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0A0625A1FAC2F0C069CA614C /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AFA34293BE5D15F6334ABE6B /* UIKit.framework */; };
+		2630BD8464D03F909A79D273 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3DF153BD56BC31237DE72371 /* Assets.xcassets */; };
+		29CFB87FD15F2927C102D0D9 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E7DB9A29753ABFE6E392F712 /* WebKit.framework */; };
+		672A623CC20E00608365276D /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4CE420BCBC4B08633E30BB23 /* Security.framework */; };
+		6B13B4E50CE6847C67895C8E /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9A25A67525B566D7A7F79C23 /* CoreGraphics.framework */; };
+		6B8CCB73E8B1DB8BE4531EE3 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5C3BB5DABCB0A373B18830DB /* MetalKit.framework */; };
+		6C642479F3DD89505A24D007 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 16F2AE11EB440C44602A5DAF /* main.mm */; };
+		752F40A8E46E9CA97705D7B0 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 6F2F3D1AF74C5B051266F2B1 /* assets */; };
+		C50E812B1E44E0E9FFEBA6FD /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 94DED12A5C574367A3EAB1B0 /* Metal.framework */; };
+		CFD6E4E8B26E8A2FE1C7DE99 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B807F638AD574DD9A6E39955 /* LaunchScreen.storyboard */; };
+		DBFB30A911BD99D638F7A139 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9D8A6C2DBE6B3DDB975B2CB0 /* QuartzCore.framework */; };
+		EF26CE38FD59C6589A3933D1 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A223260522E38B60D4A07B7F /* libapp.a */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0B6637B99CE30795BCC1DCC4 /* overlay.rs */ = {isa = PBXFileReference; path = overlay.rs; sourceTree = "<group>"; };
+		15248776BCF80BBB39408121 /* rustle-app_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "rustle-app_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		16F2AE11EB440C44602A5DAF /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		3DF153BD56BC31237DE72371 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4CE420BCBC4B08633E30BB23 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		5C3BB5DABCB0A373B18830DB /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		6CE208833E3B7CB33CDF1E0E /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		6D74E1E0B455D43554455503 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		6F2F3D1AF74C5B051266F2B1 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+		94DED12A5C574367A3EAB1B0 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		9A25A67525B566D7A7F79C23 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		9D8A6C2DBE6B3DDB975B2CB0 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		9E839A0FE186F49A7B0736CB /* mac_setup.rs */ = {isa = PBXFileReference; path = mac_setup.rs; sourceTree = "<group>"; };
+		A223260522E38B60D4A07B7F /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		A902F6548608F5AC114BCB0F /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
+		AFA34293BE5D15F6334ABE6B /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		B807F638AD574DD9A6E39955 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		BD3AE657FA9A2B1447A925A1 /* rustle-app_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "rustle-app_iOS.entitlements"; sourceTree = "<group>"; };
+		E7DB9A29753ABFE6E392F712 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F9B8CAE5BB59F2673056C933 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EF26CE38FD59C6589A3933D1 /* libapp.a in Frameworks */,
+				6B13B4E50CE6847C67895C8E /* CoreGraphics.framework in Frameworks */,
+				C50E812B1E44E0E9FFEBA6FD /* Metal.framework in Frameworks */,
+				6B8CCB73E8B1DB8BE4531EE3 /* MetalKit.framework in Frameworks */,
+				DBFB30A911BD99D638F7A139 /* QuartzCore.framework in Frameworks */,
+				672A623CC20E00608365276D /* Security.framework in Frameworks */,
+				0A0625A1FAC2F0C069CA614C /* UIKit.framework in Frameworks */,
+				29CFB87FD15F2927C102D0D9 /* WebKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		15E4D4E4B19BF39F5495CA8B /* rustle-app */ = {
+			isa = PBXGroup;
+			children = (
+				16F2AE11EB440C44602A5DAF /* main.mm */,
+				52ED98412A05F234A71475F9 /* bindings */,
+			);
+			path = "rustle-app";
+			sourceTree = "<group>";
+		};
+		40DE6E7E60059B65216C293F /* src */ = {
+			isa = PBXGroup;
+			children = (
+				9E839A0FE186F49A7B0736CB /* mac_setup.rs */,
+				A902F6548608F5AC114BCB0F /* main.rs */,
+				0B6637B99CE30795BCC1DCC4 /* overlay.rs */,
+			);
+			name = src;
+			path = ../../src;
+			sourceTree = "<group>";
+		};
+		45DF77B17C9D166651FC727D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				15248776BCF80BBB39408121 /* rustle-app_iOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		52ED98412A05F234A71475F9 /* bindings */ = {
+			isa = PBXGroup;
+			children = (
+				6CE208833E3B7CB33CDF1E0E /* bindings.h */,
+			);
+			path = bindings;
+			sourceTree = "<group>";
+		};
+		77EC947EA9DFF4B10702BE35 /* Externals */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Externals;
+			sourceTree = "<group>";
+		};
+		91A86EAA94A14D08578999E4 = {
+			isa = PBXGroup;
+			children = (
+				6F2F3D1AF74C5B051266F2B1 /* assets */,
+				3DF153BD56BC31237DE72371 /* Assets.xcassets */,
+				B807F638AD574DD9A6E39955 /* LaunchScreen.storyboard */,
+				77EC947EA9DFF4B10702BE35 /* Externals */,
+				CADD9BC6B38480ED2B78E435 /* rustle-app_iOS */,
+				E876CF41250CBEED245E4A8E /* Sources */,
+				40DE6E7E60059B65216C293F /* src */,
+				CD4E4CC1A8753DC982CB779E /* Frameworks */,
+				45DF77B17C9D166651FC727D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		CADD9BC6B38480ED2B78E435 /* rustle-app_iOS */ = {
+			isa = PBXGroup;
+			children = (
+				6D74E1E0B455D43554455503 /* Info.plist */,
+				BD3AE657FA9A2B1447A925A1 /* rustle-app_iOS.entitlements */,
+			);
+			path = "rustle-app_iOS";
+			sourceTree = "<group>";
+		};
+		CD4E4CC1A8753DC982CB779E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				9A25A67525B566D7A7F79C23 /* CoreGraphics.framework */,
+				A223260522E38B60D4A07B7F /* libapp.a */,
+				94DED12A5C574367A3EAB1B0 /* Metal.framework */,
+				5C3BB5DABCB0A373B18830DB /* MetalKit.framework */,
+				9D8A6C2DBE6B3DDB975B2CB0 /* QuartzCore.framework */,
+				4CE420BCBC4B08633E30BB23 /* Security.framework */,
+				AFA34293BE5D15F6334ABE6B /* UIKit.framework */,
+				E7DB9A29753ABFE6E392F712 /* WebKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		E876CF41250CBEED245E4A8E /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				15E4D4E4B19BF39F5495CA8B /* rustle-app */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		514F0112B4EE368ACDF59BAF /* rustle-app_iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B32ACE7CE73BDF0E2A97C299 /* Build configuration list for PBXNativeTarget "rustle-app_iOS" */;
+			buildPhases = (
+				986EAB8AA39CC53704809DA9 /* Build Rust Code */,
+				95E86960AAA238F165EA4E24 /* Sources */,
+				B7D7F73809C073B54A8A53F2 /* Resources */,
+				F9B8CAE5BB59F2673056C933 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "rustle-app_iOS";
+			packageProductDependencies = (
+			);
+			productName = "rustle-app_iOS";
+			productReference = 15248776BCF80BBB39408121 /* rustle-app_iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E81F923CBF81CEE54109DCAF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					514F0112B4EE368ACDF59BAF = {
+						DevelopmentTeam = 93S4343SAT;
+					};
+				};
+			};
+			buildConfigurationList = 9C4434CF3EB8E00E93CB9664 /* Build configuration list for PBXProject "rustle-app" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 91A86EAA94A14D08578999E4;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 45DF77B17C9D166651FC727D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				514F0112B4EE368ACDF59BAF /* rustle-app_iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B7D7F73809C073B54A8A53F2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2630BD8464D03F909A79D273 /* Assets.xcassets in Resources */,
+				CFD6E4E8B26E8A2FE1C7DE99 /* LaunchScreen.storyboard in Resources */,
+				752F40A8E46E9CA97705D7B0 /* assets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		986EAB8AA39CC53704809DA9 /* Build Rust Code */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Code";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a",
+				"$(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "npm run -- tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} 1 ${ARCHS:?}";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		95E86960AAA238F165EA4E24 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6C642479F3DD89505A24D007 /* main.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0D42BAC39980A2C3C5A2E9A0 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = debug;
+		};
+		32C4FB186A00CF08B3930CAD /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "rustle-app_iOS/rustle-app_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 93S4343SAT;
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "rustle-app_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.annix.rustle;
+				PRODUCT_NAME = Rustle;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = debug;
+		};
+		7473A6FB8D749902862EEC78 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = release;
+		};
+		CD56796E2BA5F8759AE63E7A /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "rustle-app_iOS/rustle-app_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 93S4343SAT;
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "rustle-app_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.annix.rustle;
+				PRODUCT_NAME = Rustle;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9C4434CF3EB8E00E93CB9664 /* Build configuration list for PBXProject "rustle-app" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0D42BAC39980A2C3C5A2E9A0 /* debug */,
+				7473A6FB8D749902862EEC78 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		B32ACE7CE73BDF0E2A97C299 /* Build configuration list for PBXNativeTarget "rustle-app_iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				32C4FB186A00CF08B3930CAD /* debug */,
+				CD56796E2BA5F8759AE63E7A /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E81F923CBF81CEE54109DCAF /* Project object */;
+}

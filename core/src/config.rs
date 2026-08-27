@@ -18,8 +18,14 @@ pub struct Config {
     pub launch_at_login: bool,
     #[serde(default)]
     pub press_enter_on_release: bool,
+    #[serde(default = "silence_other_audio_while_holding_by_default")]
+    pub silence_other_audio_while_holding: bool,
     #[serde(default = "default_corrections")]
     pub corrections: Vec<Correction>,
+}
+
+fn silence_other_audio_while_holding_by_default() -> bool {
+    true
 }
 
 fn default_corrections() -> Vec<Correction> {
@@ -43,6 +49,7 @@ impl Default for Config {
             input_device_name: None,
             launch_at_login: false,
             press_enter_on_release: false,
+            silence_other_audio_while_holding: true,
             corrections: default_corrections(),
         }
     }

@@ -1,0 +1,19 @@
+{
+  "identifier": "com.annix.rustle",
+  "app": {
+    "windows": [
+      {
+        "label": "settings",
+        "title": "Rustle",
+        "visible": true,
+        "fullscreen": false
+      }
+    ]
+  },
+  "bundle": {
+    "iOS": {
+      "developmentTeam": "93S4343SAT",
+      "minimumSystemVersion": "16.0"
+    }
+  }
+}

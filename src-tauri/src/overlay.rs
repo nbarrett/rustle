@@ -79,7 +79,7 @@ impl DictationOverlay {
             }
             DictationStatus::Typed(_) => {
                 set_tray(tray, "", Some("Rustle"));
-                self.hide(app);
+                self.schedule_hide(app, tray);
             }
             DictationStatus::Failed(message) => {
                 set_tray(tray, "", Some(&format!("Rustle · {message}")));

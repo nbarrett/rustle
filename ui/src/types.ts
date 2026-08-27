@@ -16,6 +16,7 @@ export type Config = {
   input_device_name: string | null;
   launch_at_login: boolean;
   press_enter_on_release: boolean;
+  silence_other_audio_while_holding: boolean;
   corrections: Correction[];
 };
 

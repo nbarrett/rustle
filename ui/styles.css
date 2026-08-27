@@ -590,3 +590,50 @@ html[data-os="linux"] select {
   cursor: pointer;
   padding: 0;
 }
+
+.hold-pad {
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 8px 0 16px;
+}
+
+html[data-os="ios"] .hold-pad,
+html[data-os="android"] .hold-pad {
+  display: flex;
+}
+
+html[data-os="ios"] .desktop-only,
+html[data-os="android"] .desktop-only {
+  display: none;
+}
+
+html[data-os="ios"] body,
+html[data-os="android"] body {
+  overflow: auto;
+}
+
+.hold-to-talk {
+  min-height: 96px;
+  border: none;
+  border-radius: 16px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 20px;
+  font-weight: 650;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.hold-to-talk.is-held {
+  background: var(--pill-live-text);
+  color: #fff;
+}
+
+html[data-os="ios"] .actions,
+html[data-os="android"] .actions {
+  position: sticky;
+  bottom: 0;
+}

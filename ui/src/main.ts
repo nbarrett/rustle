@@ -40,7 +40,7 @@ import type {
 } from "./types";
 
 let hotkeyChoices: HotkeyOption[] = [
-  { value: "Function", label: "fn (Globe)" },
+  { value: "Function", label: "🌐 Globe (fn)" },
   { value: "RightOption", label: "Right Option" },
   { value: "RightControl", label: "Right Control" },
   { value: "F8", label: "F8" },
@@ -82,7 +82,11 @@ const elements = {
   downloadStatus: requiredElement<HTMLParagraphElement>("download-status"),
   enterToggle: requiredElement<HTMLInputElement>("enter-toggle"),
   enterCaption: requiredElement<HTMLSpanElement>("enter-caption"),
+  silenceAudioToggle: requiredElement<HTMLInputElement>("silence-audio-toggle"),
   launchToggle: requiredElement<HTMLInputElement>("launch-toggle"),
+  holdPad: requiredElement<HTMLDivElement>("hold-pad"),
+  holdToTalk: requiredElement<HTMLButtonElement>("hold-to-talk"),
+  copyTranscript: requiredElement<HTMLButtonElement>("copy-transcript"),
   liveTranscript: requiredElement<HTMLTextAreaElement>("live-transcript"),
   historyList: requiredElement<HTMLDivElement>("history-list"),
   clearHistory: requiredElement<HTMLButtonElement>("clear-history"),
@@ -719,6 +723,7 @@ async function saveSettings(hideWindow = true): Promise<void> {
     input_device_name: microphoneValue === "" ? null : microphoneValue,
     launch_at_login: elements.launchToggle.checked,
     press_enter_on_release: elements.enterToggle.checked,
+    silence_other_audio_while_holding: elements.silenceAudioToggle.checked,
     corrections: corrections
       .map((rule) => ({ spoken: rule.spoken.trim(), written: rule.written.trim() }))
       .filter((rule) => rule.spoken !== ""),
@@ -811,6 +816,49 @@ function eventMatchesPushToTalk(event: KeyboardEvent, hotkey: string): boolean {
     default:
       return false;
   }
+}
+
+function isPhone(): boolean {
+  return platformName === "ios" || platformName === "android";
+}
+
+function listenForHoldToTalkOnAPhone(): void {
+  if (!isPhone()) {
+    return;
+  }
+  elements.holdPad.hidden = false;
+  const start = (event: Event) => {
+    event.preventDefault();
+    elements.holdToTalk.classList.add("is-held");
+    elements.holdToTalk.textContent = "Listening…";
+    void notifyHotkeyEdge(true);
+  };
+  const stop = (event: Event) => {
+    event.preventDefault();
+    elements.holdToTalk.classList.remove("is-held");
+    elements.holdToTalk.textContent = "Hold to talk";
+    void notifyHotkeyEdge(false);
+  };
+  elements.holdToTalk.addEventListener("pointerdown", start);
+  window.addEventListener("pointerup", stop);
+  window.addEventListener("pointercancel", stop);
+  elements.copyTranscript.addEventListener("click", () => {
+    const text = elements.liveTranscript.value.trim();
+    if (text === "") {
+      return;
+    }
+    void navigator.clipboard.writeText(text).then(
+      () => {
+        elements.copyTranscript.textContent = "Copied";
+        window.setTimeout(() => {
+          elements.copyTranscript.textContent = "Copy transcript";
+        }, 1200);
+      },
+      () => {
+        elements.copyTranscript.textContent = "Could not copy";
+      },
+    );
+  });
 }
 
 function listenForPushToTalkInThisWindow(): void {
@@ -908,6 +956,7 @@ function fallbackConfig(): Config {
     input_device_name: null,
     launch_at_login: false,
     press_enter_on_release: false,
+    silence_other_audio_while_holding: true,
     corrections: [],
   };
 }
@@ -920,6 +969,7 @@ async function initialise(): Promise<void> {
   }
   applyPlatformCopy();
   listenForPushToTalkInThisWindow();
+  listenForHoldToTalkOnAPhone();
   await refreshSetupStatus();
   await listenForMacosSetup(renderSetupStatus);
   elements.setupPermissions.addEventListener("click", () => {
@@ -949,6 +999,7 @@ async function initialise(): Promise<void> {
   await populateModels();
   elements.enterToggle.checked = config.press_enter_on_release;
   elements.launchToggle.checked = config.launch_at_login;
+  elements.silenceAudioToggle.checked = config.silence_other_audio_while_holding !== false;
 
   elements.modelSelect.addEventListener("change", () => {
     selectedModelFileName = elements.modelSelect.value;

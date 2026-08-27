@@ -1,0 +1,13 @@
+{
+  "identifier": "com.annix.rustle",
+  "app": {
+    "windows": [
+      {
+        "label": "settings",
+        "title": "Rustle",
+        "visible": true,
+        "fullscreen": false
+      }
+    ]
+  }
+}

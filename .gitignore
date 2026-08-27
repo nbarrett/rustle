@@ -2,5 +2,7 @@
 /dist
 /models/*.bin
 /node_modules
-/src-tauri/gen
+/src-tauri/gen/schemas
+/src-tauri/gen/apple/assets
+/src-tauri/gen/apple/Externals
 .DS_Store
