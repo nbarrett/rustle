@@ -1,4 +1,6 @@
-use anyhow::{anyhow, Result};
+#[cfg(not(target_os = "macos"))]
+use anyhow::anyhow;
+use anyhow::Result;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -21,8 +23,8 @@ use crate::audio::{
 use crate::config::{apply_corrections, resolve_model_path, Config, Correction};
 use crate::transcribe::{
     final_pass_only_extends_the_spoken_words, final_pass_threw_away_the_spoken_words,
-    transcript_is_a_whisper_blank_phrase, without_a_trailing_whisper_thank_you,
-    WhisperTranscriber,
+    transcript_is_a_whisper_blank_phrase, transcript_is_only_thank_you,
+    without_a_trailing_whisper_thank_you, WhisperTranscriber,
 };
 use crate::uk_english::apply_locale_english_spelling;
 
@@ -51,6 +53,7 @@ struct FinishedClip {
     heard: String,
     inserted: String,
     insert_origin: Option<i64>,
+    sentence_continues: bool,
     #[cfg(target_os = "macos")]
     insert_target: Option<crate::mac_paste::FrontApp>,
     saved_clipboard: Option<String>,
@@ -256,6 +259,7 @@ fn run_dictation_controller(
     let mut insert_origin: Option<i64> = None;
     let mut saved_clipboard: Option<String> = None;
     let mut live_ax_insert_works = true;
+    let mut sentence_continues = false;
     #[cfg(target_os = "macos")]
     let mut insert_target: Option<crate::mac_paste::FrontApp> = None;
     let mut silenced_output: Option<crate::output::SilencedOutput> = None;
@@ -350,6 +354,10 @@ fn run_dictation_controller(
                                     )),
                                 }
                             }
+                            sentence_continues = dictation_starts_inside_an_open_sentence(
+                                #[cfg(target_os = "macos")]
+                                insert_target.as_ref(),
+                            );
                             report_status(DictationStatus::Listening);
                         }
                         Err(error) => {
@@ -371,6 +379,7 @@ fn run_dictation_controller(
                 let keep_holding = wait_for_release_then_drain_live_previews(
                     &receiver,
                     &live_pass_in_flight,
+                    sentence_continues,
                     &mut heard_while_holding,
                     &mut inserted_text,
                     &mut insert_origin,
@@ -418,6 +427,7 @@ fn run_dictation_controller(
                         heard: heard_while_holding.clone(),
                         inserted: inserted_text.clone(),
                         insert_origin,
+                        sentence_continues,
                         #[cfg(target_os = "macos")]
                         insert_target: insert_target.clone(),
                         saved_clipboard: saved_clipboard.take(),
@@ -435,6 +445,7 @@ fn run_dictation_controller(
                 }
                 apply_incoming_live_preview(
                     &text,
+                    sentence_continues,
                     &mut heard_while_holding,
                     &mut inserted_text,
                     &mut insert_origin,
@@ -450,6 +461,7 @@ fn run_dictation_controller(
 
 fn apply_incoming_live_preview(
     text: &str,
+    sentence_continues: bool,
     heard_while_holding: &mut String,
     inserted_text: &mut String,
     insert_origin: &mut Option<i64>,
@@ -457,7 +469,10 @@ fn apply_incoming_live_preview(
     #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
     report_status: &(dyn Fn(DictationStatus) + Send + Sync),
 ) {
-    let shown = without_a_trailing_whisper_thank_you(text);
+    let shown = without_a_capital_when_the_sentence_continues(
+        &without_a_trailing_whisper_thank_you(text),
+        sentence_continues,
+    );
     if !live_transcript_should_be_typed(&shown) {
         return;
     }
@@ -480,6 +495,7 @@ fn apply_incoming_live_preview(
 fn wait_for_release_then_drain_live_previews(
     receiver: &Receiver<ControllerCommand>,
     live_pass_in_flight: &AtomicBool,
+    sentence_continues: bool,
     heard_while_holding: &mut String,
     inserted_text: &mut String,
     insert_origin: &mut Option<i64>,
@@ -493,6 +509,7 @@ fn wait_for_release_then_drain_live_previews(
             match command {
                 ControllerCommand::LivePreview(text) => apply_incoming_live_preview(
                     &text,
+                    sentence_continues,
                     heard_while_holding,
                     inserted_text,
                     insert_origin,
@@ -515,6 +532,7 @@ fn wait_for_release_then_drain_live_previews(
                 match command {
                     ControllerCommand::LivePreview(text) => apply_incoming_live_preview(
                         &text,
+                        sentence_continues,
                         heard_while_holding,
                         inserted_text,
                         insert_origin,
@@ -535,6 +553,91 @@ fn wait_for_release_then_drain_live_previews(
 
 fn live_transcript_should_be_typed(text: &str) -> bool {
     !text.trim().is_empty() && !transcript_is_a_whisper_blank_phrase(text)
+}
+
+fn caret_text_leaves_a_sentence_open(text_before_caret: &str) -> bool {
+    for character in text_before_caret.chars().rev() {
+        if character == '\n' || character == '\r' {
+            return false;
+        }
+        if character.is_whitespace()
+            || matches!(character, '(' | '[' | '{' | '"' | '\'' | '“' | '‘')
+        {
+            continue;
+        }
+        return !matches!(character, '.' | '!' | '?' | '…');
+    }
+    false
+}
+
+fn without_a_capital_when_the_sentence_continues(text: &str, sentence_continues: bool) -> String {
+    if !sentence_continues {
+        return text.to_string();
+    }
+    let Some(first_letter_index) = text.find(|character: char| character.is_alphabetic()) else {
+        return text.to_string();
+    };
+    let first_word: String = text[first_letter_index..]
+        .chars()
+        .take_while(|character| !character.is_whitespace())
+        .collect();
+    if first_word_must_keep_its_capital(&first_word) {
+        return text.to_string();
+    }
+    let mut characters = text[first_letter_index..].chars();
+    let Some(first_letter) = characters.next() else {
+        return text.to_string();
+    };
+    format!(
+        "{}{}{}",
+        &text[..first_letter_index],
+        first_letter.to_lowercase(),
+        characters.as_str()
+    )
+}
+
+fn first_word_must_keep_its_capital(word: &str) -> bool {
+    let trimmed = word.trim_end_matches(|character: char| !character.is_alphanumeric());
+    if trimmed == "I" || trimmed.starts_with("I'") || trimmed.starts_with("I’") {
+        return true;
+    }
+    trimmed
+        .chars()
+        .skip(1)
+        .any(|character| character.is_uppercase())
+}
+
+fn dictation_starts_inside_an_open_sentence(
+    #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
+) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if insert_target.is_none()
+            || insert_target.is_some_and(|app| app.is_ours())
+            || target_is_iterm(insert_target)
+            || target_uses_typed_keys(insert_target)
+        {
+            return false;
+        }
+        match crate::mac_ax::text_before_the_caret_in_the_focused_field() {
+            Ok(text_before_caret) => {
+                let open = caret_text_leaves_a_sentence_open(&text_before_caret);
+                write_engine_log(&format!(
+                    "caret context chars={} sentence_open={open}",
+                    text_before_caret.chars().count()
+                ));
+                open
+            }
+            Err(error) => {
+                write_engine_log(&format!("caret context unavailable: {error}"));
+                false
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
 }
 
 fn spoken_word_count(text: &str) -> usize {
@@ -589,11 +692,12 @@ fn should_skip_typing(audio: &[f32], spoken: &str) -> bool {
     if spoken.trim().is_empty() {
         return true;
     }
+    let clip_sounds_like_speech =
+        !clip_is_quieter_than_speech(audio) || clip_has_a_speech_peak(audio);
     if transcript_is_a_whisper_blank_phrase(spoken) {
-        return true;
+        return !(clip_sounds_like_speech && transcript_is_only_thank_you(spoken));
     }
-    let too_quiet = clip_is_quieter_than_speech(audio) && !clip_has_a_speech_peak(audio);
-    if !too_quiet {
+    if clip_sounds_like_speech {
         return false;
     }
     !spoken.chars().any(|character| character.is_ascii_alphanumeric())
@@ -764,6 +868,7 @@ fn spawn_clip_transcribe_worker(
                 clip.transcriber,
                 &clip.inserted,
                 &clip.heard,
+                clip.sentence_continues,
                 &mut insert_origin,
                 #[cfg(target_os = "macos")]
                 clip.insert_target.as_ref(),
@@ -801,6 +906,7 @@ fn transcribe_and_type(
     transcriber: Arc<Mutex<WhisperTranscriber>>,
     already_inserted: &str,
     heard_while_holding: &str,
+    sentence_continues: bool,
     insert_origin: &mut Option<i64>,
     #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
     report_status: &(dyn Fn(DictationStatus) + Send + Sync),
@@ -835,7 +941,10 @@ fn transcribe_and_type(
     drop(transcriber);
     let regional = apply_locale_english_spelling(raw_transcript.trim());
     let corrected = apply_corrections(&regional, &config.corrections);
-    let spoken = without_a_trailing_whisper_thank_you(corrected.trim());
+    let spoken = without_a_capital_when_the_sentence_continues(
+        &without_a_trailing_whisper_thank_you(corrected.trim()),
+        sentence_continues,
+    );
     write_engine_log(&format!(
         "final pass chars={} live chars={} typed chars={}",
         spoken.chars().count(),
@@ -843,10 +952,7 @@ fn transcribe_and_type(
         typed_so_far.chars().count()
     ));
 
-    if typed_so_far.is_empty()
-        && heard.is_empty()
-        && (should_skip_typing(&audio, &spoken) || transcript_is_a_whisper_blank_phrase(&spoken))
-    {
+    if typed_so_far.is_empty() && heard.is_empty() && should_skip_typing(&audio, &spoken) {
         write_engine_log(&format!(
             "transcript discarded spoken={spoken:?} rms={} samples={}",
             crate::audio::root_mean_square_amplitude(&audio),
@@ -1311,27 +1417,79 @@ fn ensure_model_loaded(
 #[cfg(test)]
 mod tests {
     use super::{
-        live_transcript_should_be_typed, should_skip_typing, transcript_looks_cut_short,
-        transcript_looks_unfinished, transcript_to_type_after_release, without_trailing_ellipsis,
+        caret_text_leaves_a_sentence_open, live_transcript_should_be_typed, should_skip_typing,
+        transcript_looks_cut_short, transcript_looks_unfinished, transcript_to_type_after_release,
+        without_a_capital_when_the_sentence_continues, without_trailing_ellipsis,
     };
 
     #[test]
     fn a_quiet_thank_you_is_not_typed() {
         let audio = vec![0.0; 8000];
         assert!(should_skip_typing(&audio, "Thank you."));
+        assert!(should_skip_typing(&audio, "Thanks"));
     }
 
     #[test]
-    fn a_loud_thank_you_is_not_typed() {
+    fn a_spoken_thank_you_is_typed() {
         let audio = vec![0.2; 8000];
-        assert!(should_skip_typing(&audio, "Thank you."));
-        assert!(should_skip_typing(&audio, "Thanks"));
-        assert!(should_skip_typing(&audio, "Thank you so much!"));
+        assert!(!should_skip_typing(&audio, "Thank you."));
+        assert!(!should_skip_typing(&audio, "Thanks"));
+        assert!(!should_skip_typing(&audio, "Thank you so much!"));
         assert!(!should_skip_typing(&audio, "Please send the invoice, thank you"));
+        assert!(should_skip_typing(&audio, "Thanks for watching."));
+        assert!(should_skip_typing(&audio, "Subtitles by the Amara.org community"));
         assert!(!live_transcript_should_be_typed("Thank you."));
         assert!(live_transcript_should_be_typed(
             "Please send the invoice, thank you"
         ));
+    }
+
+    #[test]
+    fn a_caret_after_a_finished_sentence_starts_a_new_one() {
+        assert!(!caret_text_leaves_a_sentence_open(""));
+        assert!(!caret_text_leaves_a_sentence_open("All done."));
+        assert!(!caret_text_leaves_a_sentence_open("All done! "));
+        assert!(!caret_text_leaves_a_sentence_open("Is it working? "));
+        assert!(!caret_text_leaves_a_sentence_open("First line\n"));
+        assert!(!caret_text_leaves_a_sentence_open("He said. \""));
+    }
+
+    #[test]
+    fn a_caret_after_unfinished_words_keeps_the_sentence_open() {
+        assert!(caret_text_leaves_a_sentence_open("Dear Nick, "));
+        assert!(caret_text_leaves_a_sentence_open("the report is "));
+        assert!(caret_text_leaves_a_sentence_open("halfway through a"));
+        assert!(caret_text_leaves_a_sentence_open("a list: "));
+        assert!(caret_text_leaves_a_sentence_open("I went ("));
+    }
+
+    #[test]
+    fn a_transcript_dictated_mid_sentence_loses_its_leading_capital() {
+        assert_eq!(
+            without_a_capital_when_the_sentence_continues("The report is late.", true),
+            "the report is late."
+        );
+        assert_eq!(
+            without_a_capital_when_the_sentence_continues("The report is late.", false),
+            "The report is late."
+        );
+        assert_eq!(
+            without_a_capital_when_the_sentence_continues("I think so.", true),
+            "I think so."
+        );
+        assert_eq!(
+            without_a_capital_when_the_sentence_continues("I'm not sure.", true),
+            "I'm not sure."
+        );
+        assert_eq!(
+            without_a_capital_when_the_sentence_continues("NGX is fine.", true),
+            "NGX is fine."
+        );
+        assert_eq!(
+            without_a_capital_when_the_sentence_continues("\"Quite so\", he said.", true),
+            "\"quite so\", he said."
+        );
+        assert_eq!(without_a_capital_when_the_sentence_continues("42 miles.", true), "42 miles.");
     }
 
     #[test]

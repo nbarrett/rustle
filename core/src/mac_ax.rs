@@ -79,6 +79,13 @@ extern "C" {
         value_callbacks: *const c_void,
     ) -> CFTypeRef;
     fn CFRelease(cf: CFTypeRef);
+    fn CFStringGetLength(the_string: CFStringRef) -> isize;
+    fn CFStringGetCString(
+        the_string: CFStringRef,
+        buffer: *mut i8,
+        buffer_size: isize,
+        encoding: u32,
+    ) -> u8;
 }
 
 pub fn process_is_trusted() -> bool {
@@ -108,30 +115,7 @@ pub fn request_accessibility_prompt() -> bool {
 
 pub fn replace_in_focused_field(origin_utf16: Option<i64>, previous: &str, current: &str) -> Result<i64> {
     unsafe {
-        let system = AXUIElementCreateSystemWide();
-        if system.is_null() {
-            return Err(anyhow!("accessibility system element was unavailable"));
-        }
-        let focused_attribute = cf_string("AXFocusedUIElement");
-        let mut focused: CFTypeRef = ptr::null();
-        let focused_status = AXUIElementCopyAttributeValue(
-            system,
-            focused_attribute,
-            &mut focused,
-        );
-        CFRelease(focused_attribute);
-        CFRelease(system as CFTypeRef);
-        if focused_status == AX_ERROR_API_DISABLED {
-            return Err(anyhow!(
-                "could not read the focused field (AX {AX_ERROR_API_DISABLED})"
-            ));
-        }
-        if focused_status != AX_ERROR_SUCCESS || focused.is_null() {
-            return Err(anyhow!(
-                "could not read the focused field (AX {focused_status})"
-            ));
-        }
-
+        let focused = copy_focused_ui_element()?;
         let previous_len = utf16_len(previous);
         let origin = match origin_utf16 {
             Some(origin) => origin,
@@ -145,6 +129,75 @@ pub fn replace_in_focused_field(origin_utf16: Option<i64>, previous: &str, curre
         CFRelease(focused);
         Ok(origin)
     }
+}
+
+pub fn text_before_the_caret_in_the_focused_field() -> Result<String> {
+    unsafe {
+        let focused = copy_focused_ui_element()?;
+        let caret = copy_selected_range(focused as AXUIElementRef);
+        let field_text = copy_string_attribute(focused as AXUIElementRef, "AXValue");
+        CFRelease(focused);
+        let caret_location = caret?.location.max(0) as usize;
+        let prefix_utf16: Vec<u16> = field_text?
+            .encode_utf16()
+            .take(caret_location)
+            .collect();
+        Ok(String::from_utf16_lossy(&prefix_utf16))
+    }
+}
+
+unsafe fn copy_focused_ui_element() -> Result<CFTypeRef> {
+    let system = AXUIElementCreateSystemWide();
+    if system.is_null() {
+        return Err(anyhow!("accessibility system element was unavailable"));
+    }
+    let focused_attribute = cf_string("AXFocusedUIElement");
+    let mut focused: CFTypeRef = ptr::null();
+    let focused_status = AXUIElementCopyAttributeValue(system, focused_attribute, &mut focused);
+    CFRelease(focused_attribute);
+    CFRelease(system as CFTypeRef);
+    if focused_status == AX_ERROR_API_DISABLED {
+        return Err(anyhow!(
+            "could not read the focused field (AX {AX_ERROR_API_DISABLED})"
+        ));
+    }
+    if focused_status != AX_ERROR_SUCCESS || focused.is_null() {
+        return Err(anyhow!(
+            "could not read the focused field (AX {focused_status})"
+        ));
+    }
+    Ok(focused)
+}
+
+unsafe fn copy_string_attribute(element: AXUIElementRef, attribute_name: &str) -> Result<String> {
+    let attribute = cf_string(attribute_name);
+    let mut value: CFTypeRef = ptr::null();
+    let status = AXUIElementCopyAttributeValue(element, attribute, &mut value);
+    CFRelease(attribute);
+    if status != AX_ERROR_SUCCESS || value.is_null() {
+        return Err(anyhow!("could not read {attribute_name} (AX {status})"));
+    }
+    let text = cf_string_to_rust(value as CFStringRef);
+    CFRelease(value);
+    text.ok_or_else(|| anyhow!("{attribute_name} was not text"))
+}
+
+unsafe fn cf_string_to_rust(value: CFStringRef) -> Option<String> {
+    let length = CFStringGetLength(value);
+    let buffer_size = length * 4 + 1;
+    let mut buffer = vec![0u8; buffer_size as usize];
+    if CFStringGetCString(
+        value,
+        buffer.as_mut_ptr().cast(),
+        buffer_size,
+        CF_STRING_ENCODING_UTF8,
+    ) == 0
+    {
+        return None;
+    }
+    let terminator = buffer.iter().position(|byte| *byte == 0)?;
+    buffer.truncate(terminator);
+    String::from_utf8(buffer).ok()
 }
 
 fn selection_location(element: AXUIElementRef) -> Result<i64> {
