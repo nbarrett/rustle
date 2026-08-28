@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
+#[cfg(target_os = "ios")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use rustle_core::audio::list_input_device_names;
@@ -23,6 +25,8 @@ const LAUNCHED_AT_LOGIN_ARGUMENT: &str = "--launched-at-login";
 mod overlay;
 #[cfg(target_os = "macos")]
 mod mac_setup;
+#[cfg(target_os = "ios")]
+mod phone_keyboard;
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use overlay::DictationOverlay;
@@ -36,6 +40,14 @@ struct FeedbackState {
     overlay: DictationOverlay,
     tray: TrayIcon,
 }
+
+#[cfg(target_os = "ios")]
+struct PhoneDictateLaunch {
+    start_recording: AtomicBool,
+}
+
+#[cfg(target_os = "ios")]
+static KEYBOARD_APP: Mutex<Option<AppHandle>> = Mutex::new(None);
 
 fn describe_status(status: &DictationStatus) -> serde_json::Value {
     match status {
@@ -454,9 +466,15 @@ fn main() {
             let config = load_config().unwrap_or_default();
             apply_launch_at_login(app.handle(), config.launch_at_login);
 
+            #[cfg(target_os = "ios")]
+            app.manage(PhoneDictateLaunch {
+                start_recording: AtomicBool::new(false),
+            });
             let status_app = app.handle().clone();
             let engine = DictationEngine::start(config, move |status| {
                 eprintln!("[rustle] {status:?}");
+                #[cfg(target_os = "ios")]
+                apply_phone_keyboard_status(&status_app, &status);
                 let _ = status_app.emit("dictation-status", describe_status(&status));
                 #[cfg(not(any(target_os = "ios", target_os = "android")))]
                 {
@@ -472,6 +490,12 @@ fn main() {
             })
             .map_err(|error| error.to_string())?;
             app.manage(Mutex::new(EngineState { engine }));
+            #[cfg(target_os = "ios")]
+            {
+                *KEYBOARD_APP.lock().unwrap() = Some(app.handle().clone());
+                phone_keyboard::listen_for_stop(on_ios_keyboard_stop);
+                drain_phone_dictate_launch(app.handle());
+            }
 
             #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
             create_hud_window(app);
@@ -484,13 +508,13 @@ fn main() {
                     tray: tray.clone(),
                 });
             }
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             if let Some(window) = app.get_webview_window("settings") {
-                #[cfg(not(any(target_os = "ios", target_os = "android")))]
                 keep_settings_window_above_full_screen_apps(&window);
-                #[cfg(any(target_os = "ios", target_os = "android"))]
-                {
-                    let _ = window.show();
-                }
+            }
+            #[cfg(target_os = "android")]
+            if let Some(window) = app.get_webview_window("settings") {
+                let _ = window.show();
             }
             #[cfg(target_os = "macos")]
             mac_setup::follow_permission_grants_and_relaunch(app.handle().clone());
@@ -537,10 +561,97 @@ fn main() {
                 reveal_settings_window(app);
                 return;
             }
+            #[cfg(target_os = "ios")]
+            if let RunEvent::Opened { urls } = &event {
+                if urls
+                    .iter()
+                    .any(|url| phone_keyboard::url_asks_to_dictate(url.as_str()))
+                {
+                    start_phone_dictate_from_keyboard(app);
+                }
+            }
             if let RunEvent::Ready = event {
+                #[cfg(target_os = "ios")]
+                if phone_keyboard::keyboard_session() {
+                    return;
+                }
                 if !process_was_started_as_login_item() {
                     reveal_settings_window(app);
                 }
             }
         });
+}
+
+#[cfg(target_os = "ios")]
+extern "C" fn on_ios_keyboard_stop() {
+    let app = KEYBOARD_APP
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().cloned());
+    let Some(app) = app else {
+        return;
+    };
+    phone_keyboard::set_phase("transcribing");
+    phone_keyboard::begin_transcribe_background_task();
+    if let Some(state) = app.try_state::<Mutex<EngineState>>() {
+        if let Ok(guard) = state.lock() {
+            guard.engine.notify_hotkey_edge(false);
+        }
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn apply_phone_keyboard_status(app: &AppHandle, status: &DictationStatus) {
+    match status {
+        DictationStatus::Listening => {
+            phone_keyboard::set_phase("listening");
+            if phone_keyboard::keyboard_session() {
+                if let Some(window) = app.get_webview_window("settings") {
+                    let _ = window.hide();
+                }
+                phone_keyboard::return_to_host_app();
+            }
+        }
+        DictationStatus::Transcribing => {
+            phone_keyboard::set_phase("transcribing");
+            phone_keyboard::begin_transcribe_background_task();
+        }
+        DictationStatus::Typed(text) => {
+            phone_keyboard::publish_transcript(text);
+            phone_keyboard::end_keyboard_session();
+        }
+        DictationStatus::Failed(_) | DictationStatus::NeedsPermission(_) => {
+            phone_keyboard::end_keyboard_session();
+        }
+        _ => {}
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn start_phone_dictate_from_keyboard(app: &AppHandle) {
+    phone_keyboard::mark_keyboard_session();
+    phone_keyboard::prepare_audio_session();
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.hide();
+    }
+    if let Some(state) = app.try_state::<Mutex<EngineState>>() {
+        if let Ok(guard) = state.lock() {
+            guard.engine.notify_hotkey_edge(true);
+            let _ = app.emit("phone-dictate", ());
+            return;
+        }
+    }
+    if let Some(launch) = app.try_state::<PhoneDictateLaunch>() {
+        launch.start_recording.store(true, Ordering::SeqCst);
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn drain_phone_dictate_launch(app: &AppHandle) {
+    let pending = app
+        .try_state::<PhoneDictateLaunch>()
+        .is_some_and(|launch| launch.start_recording.swap(false, Ordering::SeqCst));
+    if pending {
+        start_phone_dictate_from_keyboard(app);
+    }
 }

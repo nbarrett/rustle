@@ -2,7 +2,7 @@
 
 Open-source, local, **Rust** dictation. A Wispr Flow replacement you own.
 
-**[Download for your computer](https://nbarrett.github.io/rustle/)** — macOS, Windows, or Linux. The page picks the file that matches the machine you are on. Phone builds (iOS and Android) are in the repo as a hold-to-talk app: same on-device Whisper, then copy the text into whatever you are writing.
+**[Download for your computer](https://nbarrett.github.io/rustle/)** — macOS, Windows, or Linux. The page picks the file that matches the machine you are on. Phone builds (iOS and Android) are in the repo as a hold-to-talk app: same on-device Whisper. On iPhone, a Rustle keyboard stands in for the phone’s own dictation and types into WhatsApp, Mail or Notes.
 
 Your voice is transcribed by Whisper **on your own machine** and never leaves it, so it is private, free, and impossible to rate-limit. The experience is the Wispr Flow one: hold a hotkey, talk, and the text appears in whatever app you are using.
 
@@ -110,12 +110,18 @@ Config and downloaded models are stored under the OS app-data folder: `~/Library
 2. **Type anywhere** *(done)* - global hotkey plus keystroke injection into the focused app.
 3. **Cleanup pass** *(planned)* - run the raw transcript through a local LLM (Ollama) to strip filler, fix punctuation, and apply a custom vocabulary.
 4. **Menu-bar app** *(done - you are here)* - a Tauri tray app with settings, a model picker, and launch-at-login.
-5. **Phone** *(started)* - iOS and Android hold-to-talk in the Rustle app, then copy. A system keyboard that types into other apps is later work; phones do not allow a Globe hotkey.
+5. **Phone** *(started)* - iOS hold-to-talk in the Rustle app, plus a Rustle keyboard so WhatsApp, Mail and Notes can take the words. Android is the same pad today; an Android keyboard is next.
 6. **Ship it** - MIT on GitHub, so no one can ever switch it off.
 
 ### Phone (iOS and Android)
 
-Phones cannot do hold-Globe-and-type-into-Mail. The phone app is a pad: hold the button, speak, copy the transcript.
+Apple will not let a third-party app replace the system dictation key on the stock keyboard. The way to plug Rustle in *in place of* that is the **Rustle keyboard**, with Whisper doing the English.
+
+1. Turn off Apple Dictation: **Settings → General → Keyboard → Enable Dictation**.
+2. Add **Settings → General → Keyboard → Keyboards → Add New Keyboard → Rustle**, then **Allow Full Access**.
+3. In WhatsApp, Mail or Notes, switch to the Rustle keyboard and tap the mic. Talk in that app; tap again when you are done. The words go into the field.
+
+iOS still has to wake Rustle for a moment to start the microphone. After that you stay in the app you were writing in. In the Rustle app itself the control is still hold-to-talk.
 
 ```bash
 rustup target add aarch64-apple-ios aarch64-linux-android

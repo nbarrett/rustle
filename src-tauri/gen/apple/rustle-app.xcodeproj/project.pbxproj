@@ -10,40 +10,84 @@
 		0A0625A1FAC2F0C069CA614C /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AFA34293BE5D15F6334ABE6B /* UIKit.framework */; };
 		2630BD8464D03F909A79D273 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3DF153BD56BC31237DE72371 /* Assets.xcassets */; };
 		29CFB87FD15F2927C102D0D9 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E7DB9A29753ABFE6E392F712 /* WebKit.framework */; };
+		635FEDE53F055E4EA0D19677 /* keyboard_inbox.m in Sources */ = {isa = PBXBuildFile; fileRef = E1B481AB796F9D320628E0F8 /* keyboard_inbox.m */; };
 		672A623CC20E00608365276D /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4CE420BCBC4B08633E30BB23 /* Security.framework */; };
 		6B13B4E50CE6847C67895C8E /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9A25A67525B566D7A7F79C23 /* CoreGraphics.framework */; };
 		6B8CCB73E8B1DB8BE4531EE3 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5C3BB5DABCB0A373B18830DB /* MetalKit.framework */; };
 		6C642479F3DD89505A24D007 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 16F2AE11EB440C44602A5DAF /* main.mm */; };
 		752F40A8E46E9CA97705D7B0 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 6F2F3D1AF74C5B051266F2B1 /* assets */; };
+		858C6C6DCA6DE4A3B513F57C /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ECDE9DCB782C59B03274E7DC /* AVFoundation.framework */; };
+		C2CD9D39D039A940C98FE89F /* RustleKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3CEDAC9E4B006619A453E35E /* RustleKeyboard.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		C50E812B1E44E0E9FFEBA6FD /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 94DED12A5C574367A3EAB1B0 /* Metal.framework */; };
+		C511CDFC97DE6ECFECBD4A7F /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87FDCA08D5B0D3217461983A /* KeyboardViewController.swift */; };
 		CFD6E4E8B26E8A2FE1C7DE99 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B807F638AD574DD9A6E39955 /* LaunchScreen.storyboard */; };
 		DBFB30A911BD99D638F7A139 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9D8A6C2DBE6B3DDB975B2CB0 /* QuartzCore.framework */; };
+		EC11D7BEB26ACBBD3F6DEEEC /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AFA34293BE5D15F6334ABE6B /* UIKit.framework */; };
 		EF26CE38FD59C6589A3933D1 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A223260522E38B60D4A07B7F /* libapp.a */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4BBA469E807C10F0B584C359 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E81F923CBF81CEE54109DCAF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 467521D90E3FA30902387461;
+			remoteInfo = RustleKeyboard;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		35AAA159A175ACE8BAFAADBB /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C2CD9D39D039A940C98FE89F /* RustleKeyboard.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		0B6637B99CE30795BCC1DCC4 /* overlay.rs */ = {isa = PBXFileReference; path = overlay.rs; sourceTree = "<group>"; };
 		15248776BCF80BBB39408121 /* rustle-app_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "rustle-app_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		16F2AE11EB440C44602A5DAF /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		3CEDAC9E4B006619A453E35E /* RustleKeyboard.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = RustleKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3DF153BD56BC31237DE72371 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4CE420BCBC4B08633E30BB23 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		5C3BB5DABCB0A373B18830DB /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		6CE208833E3B7CB33CDF1E0E /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
 		6D74E1E0B455D43554455503 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6F2F3D1AF74C5B051266F2B1 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+		87FDCA08D5B0D3217461983A /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
 		94DED12A5C574367A3EAB1B0 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		9A25A67525B566D7A7F79C23 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		9D8A6C2DBE6B3DDB975B2CB0 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		9E839A0FE186F49A7B0736CB /* mac_setup.rs */ = {isa = PBXFileReference; path = mac_setup.rs; sourceTree = "<group>"; };
+		A10200F953AEB8AA0B017E9F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A223260522E38B60D4A07B7F /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		A902F6548608F5AC114BCB0F /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
 		AFA34293BE5D15F6334ABE6B /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		B807F638AD574DD9A6E39955 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		BD3AE657FA9A2B1447A925A1 /* rustle-app_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "rustle-app_iOS.entitlements"; sourceTree = "<group>"; };
+		BF6FDAD5DC91A880EF2B73D3 /* RustleKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RustleKeyboard.entitlements; sourceTree = "<group>"; };
+		E1B481AB796F9D320628E0F8 /* keyboard_inbox.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = keyboard_inbox.m; sourceTree = "<group>"; };
 		E7DB9A29753ABFE6E392F712 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		ECDE9DCB782C59B03274E7DC /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		FEA0A850A28F999A8FED29CA /* phone_keyboard.rs */ = {isa = PBXFileReference; path = phone_keyboard.rs; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		69F537F47554C79AC8428723 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EC11D7BEB26ACBBD3F6DEEEC /* UIKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F9B8CAE5BB59F2673056C933 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -56,6 +100,7 @@
 				672A623CC20E00608365276D /* Security.framework in Frameworks */,
 				0A0625A1FAC2F0C069CA614C /* UIKit.framework in Frameworks */,
 				29CFB87FD15F2927C102D0D9 /* WebKit.framework in Frameworks */,
+				858C6C6DCA6DE4A3B513F57C /* AVFoundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +110,7 @@
 		15E4D4E4B19BF39F5495CA8B /* rustle-app */ = {
 			isa = PBXGroup;
 			children = (
+				E1B481AB796F9D320628E0F8 /* keyboard_inbox.m */,
 				16F2AE11EB440C44602A5DAF /* main.mm */,
 				52ED98412A05F234A71475F9 /* bindings */,
 			);
@@ -77,6 +123,7 @@
 				9E839A0FE186F49A7B0736CB /* mac_setup.rs */,
 				A902F6548608F5AC114BCB0F /* main.rs */,
 				0B6637B99CE30795BCC1DCC4 /* overlay.rs */,
+				FEA0A850A28F999A8FED29CA /* phone_keyboard.rs */,
 			);
 			name = src;
 			path = ../../src;
@@ -86,6 +133,7 @@
 			isa = PBXGroup;
 			children = (
 				15248776BCF80BBB39408121 /* rustle-app_iOS.app */,
+				3CEDAC9E4B006619A453E35E /* RustleKeyboard.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -113,6 +161,7 @@
 				B807F638AD574DD9A6E39955 /* LaunchScreen.storyboard */,
 				77EC947EA9DFF4B10702BE35 /* Externals */,
 				CADD9BC6B38480ED2B78E435 /* rustle-app_iOS */,
+				F8FEF5CD736601080FF838D3 /* RustleKeyboard */,
 				E876CF41250CBEED245E4A8E /* Sources */,
 				40DE6E7E60059B65216C293F /* src */,
 				CD4E4CC1A8753DC982CB779E /* Frameworks */,
@@ -132,6 +181,7 @@
 		CD4E4CC1A8753DC982CB779E /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				ECDE9DCB782C59B03274E7DC /* AVFoundation.framework */,
 				9A25A67525B566D7A7F79C23 /* CoreGraphics.framework */,
 				A223260522E38B60D4A07B7F /* libapp.a */,
 				94DED12A5C574367A3EAB1B0 /* Metal.framework */,
@@ -152,9 +202,37 @@
 			path = Sources;
 			sourceTree = "<group>";
 		};
+		F8FEF5CD736601080FF838D3 /* RustleKeyboard */ = {
+			isa = PBXGroup;
+			children = (
+				A10200F953AEB8AA0B017E9F /* Info.plist */,
+				87FDCA08D5B0D3217461983A /* KeyboardViewController.swift */,
+				BF6FDAD5DC91A880EF2B73D3 /* RustleKeyboard.entitlements */,
+			);
+			path = RustleKeyboard;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		467521D90E3FA30902387461 /* RustleKeyboard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D7294EB672B88E87CE8A84E6 /* Build configuration list for PBXNativeTarget "RustleKeyboard" */;
+			buildPhases = (
+				A28F533D90C57C5A14C84A06 /* Sources */,
+				69F537F47554C79AC8428723 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RustleKeyboard;
+			packageProductDependencies = (
+			);
+			productName = RustleKeyboard;
+			productReference = 3CEDAC9E4B006619A453E35E /* RustleKeyboard.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		514F0112B4EE368ACDF59BAF /* rustle-app_iOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B32ACE7CE73BDF0E2A97C299 /* Build configuration list for PBXNativeTarget "rustle-app_iOS" */;
@@ -163,10 +241,12 @@
 				95E86960AAA238F165EA4E24 /* Sources */,
 				B7D7F73809C073B54A8A53F2 /* Resources */,
 				F9B8CAE5BB59F2673056C933 /* Frameworks */,
+				35AAA159A175ACE8BAFAADBB /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				28433ED84ED5ABB73D8F9F8A /* PBXTargetDependency */,
 			);
 			name = "rustle-app_iOS";
 			packageProductDependencies = (
@@ -184,6 +264,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					467521D90E3FA30902387461 = {
+						DevelopmentTeam = 93S4343SAT;
+					};
 					514F0112B4EE368ACDF59BAF = {
 						DevelopmentTeam = 93S4343SAT;
 					};
@@ -204,6 +287,7 @@
 			projectRoot = "";
 			targets = (
 				514F0112B4EE368ACDF59BAF /* rustle-app_iOS */,
+				467521D90E3FA30902387461 /* RustleKeyboard */,
 			);
 		};
 /* End PBXProject section */
@@ -250,13 +334,48 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				635FEDE53F055E4EA0D19677 /* keyboard_inbox.m in Sources */,
 				6C642479F3DD89505A24D007 /* main.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A28F533D90C57C5A14C84A06 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C511CDFC97DE6ECFECBD4A7F /* KeyboardViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		28433ED84ED5ABB73D8F9F8A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 467521D90E3FA30902387461 /* RustleKeyboard */;
+			targetProxy = 4BBA469E807C10F0B584C359 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		024F27F4D895C347023C0598 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = RustleKeyboard/RustleKeyboard.entitlements;
+				DEVELOPMENT_TEAM = 93S4343SAT;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RustleKeyboard/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.annix.rustle.keyboard;
+				PRODUCT_NAME = RustleKeyboard;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = release;
+		};
 		0D42BAC39980A2C3C5A2E9A0 /* debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -408,6 +527,24 @@
 			};
 			name = release;
 		};
+		87F3F3E138C4A328B350986D /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = RustleKeyboard/RustleKeyboard.entitlements;
+				DEVELOPMENT_TEAM = 93S4343SAT;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RustleKeyboard/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.annix.rustle.keyboard;
+				PRODUCT_NAME = RustleKeyboard;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = debug;
+		};
 		CD56796E2BA5F8759AE63E7A /* release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -457,6 +594,15 @@
 			buildConfigurations = (
 				32C4FB186A00CF08B3930CAD /* debug */,
 				CD56796E2BA5F8759AE63E7A /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		D7294EB672B88E87CE8A84E6 /* Build configuration list for PBXNativeTarget "RustleKeyboard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				87F3F3E138C4A328B350986D /* debug */,
+				024F27F4D895C347023C0598 /* release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = debug;

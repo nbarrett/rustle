@@ -1216,7 +1216,12 @@ fn sync_focused_text_to_transcript(
             }
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        let _ = insert_origin;
+        return Ok(InsertKind::OwnUi);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
     {
         let _ = insert_origin;
         insert_text_for_target(previous, current, false, false)

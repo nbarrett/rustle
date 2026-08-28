@@ -609,27 +609,76 @@ html[data-os="android"] .desktop-only {
   display: none;
 }
 
+html[data-os="android"] #keyboard-hint {
+  display: none;
+}
+
 html[data-os="ios"] body,
 html[data-os="android"] body {
   overflow: auto;
 }
 
-.hold-to-talk {
-  min-height: 96px;
-  border: none;
-  border-radius: 16px;
-  background: var(--accent);
-  color: var(--accent-text);
-  font-size: 20px;
+.hold-mic-caption {
+  margin: 0;
+  text-align: center;
+  font-size: 15px;
   font-weight: 650;
+}
+
+.hold-mic {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  margin: 8px auto 4px;
+  border: none;
+  border-radius: 50%;
+  background: #25d366;
+  color: #fff;
   cursor: pointer;
   touch-action: none;
   user-select: none;
+  display: grid;
+  place-items: center;
 }
 
-.hold-to-talk.is-held {
-  background: var(--pill-live-text);
-  color: #fff;
+.hold-mic-core {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  z-index: 1;
+}
+
+.hold-mic-core svg {
+  width: 32px;
+  height: 32px;
+}
+
+.hold-mic-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(37, 211, 102, 0.45);
+  pointer-events: none;
+}
+
+.hold-mic.is-held {
+  background: #128c7e;
+}
+
+.hold-mic.is-held .hold-mic-ring {
+  animation: hold-mic-pulse 1.1s ease-out infinite;
+}
+
+@keyframes hold-mic-pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(1.28);
+    opacity: 0;
+  }
 }
 
 html[data-os="ios"] .actions,

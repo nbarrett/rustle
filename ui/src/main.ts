@@ -13,6 +13,7 @@ import {
   listModels,
   listenForDictationStatus,
   listenForMacosSetup,
+  listenForPhoneDictate,
   listenForModelDownloadProgress,
   macosSetupStatus,
   notifyHotkeyEdge,
@@ -86,6 +87,7 @@ const elements = {
   launchToggle: requiredElement<HTMLInputElement>("launch-toggle"),
   holdPad: requiredElement<HTMLDivElement>("hold-pad"),
   holdToTalk: requiredElement<HTMLButtonElement>("hold-to-talk"),
+  holdMicCaption: requiredElement<HTMLParagraphElement>("hold-mic-caption"),
   copyTranscript: requiredElement<HTMLButtonElement>("copy-transcript"),
   liveTranscript: requiredElement<HTMLTextAreaElement>("live-transcript"),
   historyList: requiredElement<HTMLDivElement>("history-list"),
@@ -683,6 +685,10 @@ function applyStatusEvent(payload: DictationStatusEvent): void {
       setStatus("Typed", "status-live");
       setInsertNote("");
       addHistoryEntry(payload.text);
+      if (isPhone()) {
+        phoneMicFinishesOnTap = false;
+        setPhoneMicHeld(false, "Hold to talk");
+      }
       break;
     case "settings_preview":
       showLastTranscript(payload.text ?? "", false);
@@ -693,9 +699,16 @@ function applyStatusEvent(payload: DictationStatusEvent): void {
     case "failed":
       setStatus("Error", "status-fail");
       setInsertNote(payload.text);
+      if (isPhone()) {
+        phoneMicFinishesOnTap = false;
+        setPhoneMicHeld(false, "Hold to talk");
+      }
       break;
     case "idle":
       setStatus("Idle", "status-idle");
+      if (isPhone() && !phoneMicFinishesOnTap) {
+        setPhoneMicHeld(false, "Hold to talk");
+      }
       break;
   }
 }
@@ -822,6 +835,15 @@ function isPhone(): boolean {
   return platformName === "ios" || platformName === "android";
 }
 
+let phoneMicIsHeld = false;
+let phoneMicFinishesOnTap = false;
+
+function setPhoneMicHeld(held: boolean, caption: string): void {
+  phoneMicIsHeld = held;
+  elements.holdToTalk.classList.toggle("is-held", held);
+  elements.holdMicCaption.textContent = caption;
+}
+
 function listenForHoldToTalkOnAPhone(): void {
   if (!isPhone()) {
     return;
@@ -829,19 +851,30 @@ function listenForHoldToTalkOnAPhone(): void {
   elements.holdPad.hidden = false;
   const start = (event: Event) => {
     event.preventDefault();
-    elements.holdToTalk.classList.add("is-held");
-    elements.holdToTalk.textContent = "Listening…";
+    if (phoneMicFinishesOnTap) {
+      phoneMicFinishesOnTap = false;
+      setPhoneMicHeld(false, "Hold to talk");
+      void notifyHotkeyEdge(false);
+      return;
+    }
+    setPhoneMicHeld(true, "Listening…");
     void notifyHotkeyEdge(true);
   };
   const stop = (event: Event) => {
     event.preventDefault();
-    elements.holdToTalk.classList.remove("is-held");
-    elements.holdToTalk.textContent = "Hold to talk";
+    if (phoneMicFinishesOnTap || !phoneMicIsHeld) {
+      return;
+    }
+    setPhoneMicHeld(false, "Hold to talk");
     void notifyHotkeyEdge(false);
   };
   elements.holdToTalk.addEventListener("pointerdown", start);
   window.addEventListener("pointerup", stop);
   window.addEventListener("pointercancel", stop);
+  void listenForPhoneDictate(() => {
+    phoneMicFinishesOnTap = true;
+    setPhoneMicHeld(true, "Tap to finish");
+  });
   elements.copyTranscript.addEventListener("click", () => {
     const text = elements.liveTranscript.value.trim();
     if (text === "") {

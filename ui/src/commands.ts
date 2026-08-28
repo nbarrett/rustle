@@ -97,6 +97,12 @@ export function listenForDictationStatus(
   });
 }
 
+export function listenForPhoneDictate(onEvent: () => void): Promise<UnlistenFn> {
+  return listen("phone-dictate", () => {
+    onEvent();
+  });
+}
+
 export function listenForModelDownloadProgress(
   onEvent: (progress: ModelDownloadProgress) => void,
 ): Promise<UnlistenFn> {

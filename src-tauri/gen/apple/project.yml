@@ -54,8 +54,16 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.1.8
         CFBundleVersion: "0.1.8"
+        NSMicrophoneUsageDescription: Rustle listens to your microphone so it can transcribe your speech into text on your own phone.
+        UIBackgroundModes: [audio]
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLName: com.annix.rustle
+            CFBundleURLSchemes: [rustle]
     entitlements:
       path: rustle-app_iOS/rustle-app_iOS.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.annix.rustle]
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full
@@ -71,6 +79,9 @@ targets:
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
       groups: [app]
     dependencies:
+      - target: RustleKeyboard
+        embed: true
+        codeSign: true
       - framework: libapp.a
         embed: false
       - sdk: CoreGraphics.framework
@@ -80,6 +91,7 @@ targets:
       - sdk: Security.framework
       - sdk: UIKit.framework
       - sdk: WebKit.framework
+      - sdk: AVFoundation.framework
     preBuildScripts:
       - script: npm run -- tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}
         name: Build Rust Code
@@ -87,3 +99,39 @@ targets:
         outputFiles:
           - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
           - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a
+  RustleKeyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: RustleKeyboard
+    info:
+      path: RustleKeyboard/Info.plist
+      properties:
+        CFBundleDisplayName: Rustle
+        CFBundleShortVersionString: 0.1.8
+        CFBundleVersion: "0.1.8"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+          NSExtensionAttributes:
+            IsASCIICapable: false
+            PrefersRightToLeft: false
+            PrimaryLanguage: en-GB
+            RequestsOpenAccess: true
+    entitlements:
+      path: RustleKeyboard/RustleKeyboard.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.annix.rustle]
+    settings:
+      base:
+        PRODUCT_NAME: RustleKeyboard
+        PRODUCT_BUNDLE_IDENTIFIER: com.annix.rustle.keyboard
+        DEVELOPMENT_TEAM: 93S4343SAT
+        SKIP_INSTALL: true
+        TARGETED_DEVICE_FAMILY: "1,2"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: false
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+    dependencies:
+      - sdk: UIKit.framework

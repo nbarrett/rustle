@@ -25,8 +25,22 @@
       <div class="body">
         <section class="tab-panel is-active" id="panel-dictation">
           <div id="hold-pad" class="hold-pad" hidden>
-            <button id="hold-to-talk" class="hold-to-talk" type="button">Hold to talk</button>
-            <p class="field-hint" id="hold-pad-hint">Hold, speak, let go. Copy the text into any app.</p>
+            <p id="hold-mic-caption" class="hold-mic-caption">Hold to talk</p>
+            <button id="hold-to-talk" class="hold-mic" type="button" aria-label="Hold to talk">
+              <span class="hold-mic-ring"></span>
+              <span class="hold-mic-core">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"
+                  />
+                </svg>
+              </span>
+            </button>
+            <p class="field-hint" id="hold-pad-hint">Hold, speak, let go. Copy if you are still in Rustle.</p>
+            <p class="field-hint" id="keyboard-hint">
+              This is the dictation to use instead of the phone’s. Turn off Apple Dictation (Settings → General → Keyboard → Enable Dictation). Add the Rustle keyboard: Settings → General → Keyboard → Keyboards → Add New Keyboard → Rustle, then Allow Full Access. In WhatsApp or Mail, switch to that keyboard and tap the mic. Talk there; tap again when you are done. Whisper types the English into the field.
+            </p>
             <button id="copy-transcript" class="secondary" type="button">Copy transcript</button>
           </div>
           <div id="setup-banner" class="setup-banner" hidden>

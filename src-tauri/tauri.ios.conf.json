@@ -5,7 +5,7 @@
       {
         "label": "settings",
         "title": "Rustle",
-        "visible": true,
+        "visible": false,
         "fullscreen": false
       }
     ]
