@@ -52,8 +52,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.1.8
-        CFBundleVersion: "0.1.8"
+        CFBundleShortVersionString: 0.1.9
+        CFBundleVersion: "0.1.9"
         NSMicrophoneUsageDescription: Rustle listens to your microphone so it can transcribe your speech into text on your own phone.
         UIBackgroundModes: [audio]
         CFBundleURLTypes:
@@ -108,8 +108,8 @@ targets:
       path: RustleKeyboard/Info.plist
       properties:
         CFBundleDisplayName: Rustle
-        CFBundleShortVersionString: 0.1.8
-        CFBundleVersion: "0.1.8"
+        CFBundleShortVersionString: 0.1.9
+        CFBundleVersion: "0.1.9"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.keyboard-service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
