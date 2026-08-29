@@ -489,9 +489,59 @@ html[data-os="linux"] select {
 
 .setup-list {
   margin: 0;
-  padding-left: 1.1em;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   font-size: 13px;
+}
+
+.setup-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.setup-item.is-done {
+  color: var(--text-muted);
+}
+
+.setup-item.is-needed {
   color: var(--pill-work-text);
+  font-weight: 600;
+}
+
+.setup-mark {
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.setup-item.is-done .setup-mark {
+  color: var(--pill-live-text);
+}
+
+.setup-item.is-needed .setup-mark {
+  color: var(--pill-fail-text);
+}
+
+.setup-open {
+  margin-left: auto;
+  border: none;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.setup-open:hover {
+  background: var(--surface);
 }
 
 .insert-banner {

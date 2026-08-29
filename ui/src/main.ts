@@ -88,6 +88,7 @@ const elements = {
   holdPad: requiredElement<HTMLDivElement>("hold-pad"),
   holdToTalk: requiredElement<HTMLButtonElement>("hold-to-talk"),
   holdMicCaption: requiredElement<HTMLParagraphElement>("hold-mic-caption"),
+  setupStuckHint: requiredElement<HTMLParagraphElement>("setup-stuck-hint"),
   copyTranscript: requiredElement<HTMLButtonElement>("copy-transcript"),
   liveTranscript: requiredElement<HTMLTextAreaElement>("live-transcript"),
   historyList: requiredElement<HTMLDivElement>("history-list"),
@@ -778,16 +779,33 @@ function renderSetupStatus(status: MacosSetupStatus): void {
     status.in_applications && status.listen && status.accessibility && microphone;
   elements.setupBanner.hidden = ready;
   elements.setupInstall.hidden = status.in_applications;
-  const rows: Array<[boolean, string]> = [
-    [status.in_applications, "Installed in Applications"],
-    [status.listen, "Input Monitoring: hears the hotkey in other apps"],
-    [status.accessibility, "Accessibility: types into the app you are using"],
-    [microphone, "Microphone: records what you say"],
+  elements.setupStuckHint.hidden = status.listen && status.accessibility;
+  const rows: Array<[boolean, string, PermissionPane | null]> = [
+    [status.in_applications, "Installed in Applications", null],
+    [status.listen, "Input Monitoring: hears the hotkey in other apps", "listen"],
+    [status.accessibility, "Accessibility: types into the app you are using", "accessibility"],
+    [microphone, "Microphone: records what you say", "microphone"],
   ];
   elements.setupList.replaceChildren();
-  for (const [ok, label] of rows) {
+  for (const [ok, label, pane] of rows) {
     const item = document.createElement("li");
-    item.textContent = `${ok ? "On" : "Needs setup"}: ${label}`;
+    item.className = ok ? "setup-item is-done" : "setup-item is-needed";
+    const mark = document.createElement("span");
+    mark.className = "setup-mark";
+    mark.textContent = ok ? "✓" : "✕";
+    const text = document.createElement("span");
+    text.textContent = label;
+    item.append(mark, text);
+    if (!ok && pane !== null) {
+      const openPane = document.createElement("button");
+      openPane.type = "button";
+      openPane.className = "setup-open";
+      openPane.textContent = "Open settings";
+      openPane.addEventListener("click", () => {
+        void openPermissionSettings(pane);
+      });
+      item.appendChild(openPane);
+    }
     elements.setupList.appendChild(item);
   }
   if (ready) {

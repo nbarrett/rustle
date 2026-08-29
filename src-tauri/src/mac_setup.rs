@@ -50,11 +50,16 @@ pub fn current_setup_status() -> MacosSetupStatus {
 }
 
 fn open_privacy_pane(modern: &str, legacy: &str) {
-    let _ = Command::new("open")
+    let modern_pane_opened = Command::new("open")
         .arg(format!(
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?{modern}"
         ))
-        .status();
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if modern_pane_opened {
+        return;
+    }
     let _ = Command::new("open")
         .arg(format!(
             "x-apple.systempreferences:com.apple.preference.security?{legacy}"
