@@ -555,6 +555,7 @@ fn live_transcript_should_be_typed(text: &str) -> bool {
     !text.trim().is_empty() && !transcript_is_a_whisper_blank_phrase(text)
 }
 
+#[cfg(any(test, target_os = "macos"))]
 fn caret_text_leaves_a_sentence_open(text_before_caret: &str) -> bool {
     for character in text_before_caret.chars().rev() {
         if character == '\n' || character == '\r' {
@@ -1049,6 +1050,7 @@ fn transcribe_and_type(
     Ok(())
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum InsertKind {
     Unchanged,
@@ -1261,6 +1263,7 @@ fn report_insert_problem(report_status: &(dyn Fn(DictationStatus) + Send + Sync)
     report_status(DictationStatus::Failed(error.to_string()));
 }
 
+#[cfg(target_os = "macos")]
 fn shared_prefix_char_count(left: &str, right: &str) -> usize {
     left.chars()
         .zip(right.chars())
