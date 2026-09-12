@@ -57,6 +57,7 @@ const elements = {
   correctionsFile: requiredElement<HTMLInputElement>("corrections-file"),
   prefersBritish: requiredElement<HTMLInputElement>("prefers-british"),
   hearsThisMachine: requiredElement<HTMLInputElement>("hears-this-machine"),
+  inputLevel: requiredElement<HTMLSpanElement>("input-level"),
   correctionsStatus: requiredElement<HTMLParagraphElement>("corrections-status"),
   historyList: requiredElement<HTMLDivElement>("history-list"),
   exportHistory: requiredElement<HTMLButtonElement>("export-history"),
@@ -522,15 +523,57 @@ async function microphoneStream(): Promise<MediaStream> {
   return recordingStream;
 }
 
+let sharedDecoder: AudioContext | null = null;
+
+function decodingContext(): AudioContext {
+  if (!sharedDecoder || sharedDecoder.state === "closed") {
+    sharedDecoder = new AudioContext({ sampleRate: WHISPER_SAMPLE_RATE });
+  }
+  return sharedDecoder;
+}
+
 async function monoSamplesAtWhisperRate(clip: Blob): Promise<Float32Array> {
   const encoded = await clip.arrayBuffer();
-  const decoder = new AudioContext({ sampleRate: WHISPER_SAMPLE_RATE });
-  try {
-    const decoded = await decoder.decodeAudioData(encoded);
-    return decoded.getChannelData(0).slice();
-  } finally {
-    await decoder.close();
+  const decoded = await decodingContext().decodeAudioData(encoded);
+  return decoded.getChannelData(0).slice();
+}
+
+let levelContext: AudioContext | null = null;
+let levelAnalyser: AnalyserNode | null = null;
+let levelTimer = 0;
+
+function showInputLevelWhileRecording(stream: MediaStream): void {
+  if (!levelContext || levelContext.state === "closed") {
+    levelContext = new AudioContext();
   }
+  void levelContext.resume();
+  levelAnalyser = levelContext.createAnalyser();
+  levelAnalyser.fftSize = 1024;
+  levelContext.createMediaStreamSource(stream).connect(levelAnalyser);
+  const samples = new Uint8Array(levelAnalyser.frequencyBinCount);
+  const paint = () => {
+    if (!levelAnalyser) {
+      return;
+    }
+    levelAnalyser.getByteTimeDomainData(samples);
+    let sum = 0;
+    for (const sample of samples) {
+      const centred = (sample - 128) / 128;
+      sum += centred * centred;
+    }
+    const loudness = Math.min(1, Math.sqrt(sum / samples.length) * 4);
+    elements.inputLevel.style.transform = `scaleX(${loudness.toFixed(3)})`;
+    elements.inputLevel.classList.toggle("quiet", loudness < 0.02);
+  };
+  levelTimer = window.setInterval(paint, 60);
+  paint();
+}
+
+function stopShowingInputLevel(): void {
+  window.clearInterval(levelTimer);
+  levelAnalyser = null;
+  elements.inputLevel.style.transform = "scaleX(0)";
+  elements.inputLevel.classList.remove("quiet");
 }
 
 async function startRecording(): Promise<void> {
@@ -556,6 +599,7 @@ async function startRecording(): Promise<void> {
     currentlyRecording = true;
     elements.holdToTalk.classList.add("listening");
     elements.holdToTalk.classList.toggle("latched", recordingIsLatched);
+    showInputLevelWhileRecording(stream);
     showEngineState("Listening", "live");
     showRecordingHint();
   } catch (error) {
@@ -574,6 +618,7 @@ function stopRecording(): void {
   }
   currentlyRecording = false;
   recordingIsLatched = false;
+  stopShowingInputLevel();
   elements.holdToTalk.classList.remove("listening", "latched");
   showEngineState("Working", "work");
   clipRecorder.stop();
