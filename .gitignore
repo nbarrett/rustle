@@ -9,6 +9,6 @@
 
 dist-web
 web/wasm/pkg
-.claude/
+.claude/settings.local.json
 
 docs/app

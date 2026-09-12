@@ -10,9 +10,9 @@ use objc2::{MainThreadMarker, MainThreadOnly};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
     NSAppearance, NSAppearanceCustomization, NSAppearanceNameDarkAqua, NSBackingStoreType, NSColor,
-    NSFont, NSLineBreakMode, NSPanel, NSPopUpMenuWindowLevel, NSScreen, NSTextAlignment, NSTextField,
-    NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
-    NSWindowAnimationBehavior, NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSFont, NSLineBreakMode, NSPanel, NSPopUpMenuWindowLevel, NSScreen, NSTextAlignment,
+    NSTextField, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
+    NSVisualEffectView, NSWindowAnimationBehavior, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
@@ -181,7 +181,10 @@ fn place_overlay_on_screen(panel: &NSPanel, width: f64, height: f64, mtm: MainTh
     let min_y = visible.origin.y + 16.0;
     let max_y = (visible.origin.y + visible.size.height - height - 16.0).max(min_y);
     let y = (visible.origin.y + OVERLAY_BOTTOM_MARGIN).clamp(min_y, max_y);
-    panel.setFrame_display(NSRect::new(NSPoint::new(x, y), NSSize::new(width, height)), false);
+    panel.setFrame_display(
+        NSRect::new(NSPoint::new(x, y), NSSize::new(width, height)),
+        false,
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -201,8 +204,7 @@ fn round_overlay_corners(panel: &NSPanel) {
 impl NativeOverlay {
     fn try_create() -> Option<Self> {
         let mtm = MainThreadMarker::new()?;
-        let style =
-            NSWindowStyleMask::Borderless.union(NSWindowStyleMask::NonactivatingPanel);
+        let style = NSWindowStyleMask::Borderless.union(NSWindowStyleMask::NonactivatingPanel);
         let panel = NSPanel::initWithContentRect_styleMask_backing_defer(
             NSPanel::alloc(mtm),
             NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(280.0, 56.0)),
@@ -262,7 +264,8 @@ impl NativeOverlay {
     }
 
     fn set_text(&self, text: &str) {
-        self.field.setPreferredMaxLayoutWidth(OVERLAY_MAX_TEXT_WIDTH);
+        self.field
+            .setPreferredMaxLayoutWidth(OVERLAY_MAX_TEXT_WIDTH);
         self.field.setStringValue(&NSString::from_str(text));
         self.field.sizeToFit();
         let text_size = self.field.frame().size;

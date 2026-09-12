@@ -13,8 +13,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, PeekMessageW,
     RegisterClassW, SetTimer, SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, HHOOK,
     HWND_MESSAGE, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, LLKHF_INJECTED, LLKHF_UP, MSG, PM_NOREMOVE,
-    RI_KEY_BREAK, RI_KEY_E0, WH_KEYBOARD_LL, WM_INPUT, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN,
-    WM_SYSKEYUP, WM_TIMER, WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSW,
+    RI_KEY_BREAK, RI_KEY_E0, WH_KEYBOARD_LL, WINDOW_EX_STYLE, WINDOW_STYLE, WM_INPUT, WM_KEYDOWN,
+    WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WNDCLASSW,
 };
 
 use crate::config::Config;
@@ -87,13 +87,8 @@ unsafe fn pump_windows_hotkey_messages() -> Result<(), String> {
 fn install_keyboard_hook() -> Result<HHOOK, String> {
     unsafe {
         let module = GetModuleHandleW(None).map_err(|error| error.to_string())?;
-        SetWindowsHookExW(
-            WH_KEYBOARD_LL,
-            Some(keyboard_hook),
-            HINSTANCE(module.0),
-            0,
-        )
-        .map_err(|error| error.to_string())
+        SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), HINSTANCE(module.0), 0)
+            .map_err(|error| error.to_string())
     }
 }
 

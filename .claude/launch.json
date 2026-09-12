@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "rustle-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "run",
+        "web:dev"
+      ],
+      "port": 5183
+    },
+    {
+      "name": "rustle-site",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "docs",
+        "--port",
+        "5184",
+        "--strictPort"
+      ],
+      "port": 5184
+    }
+  ]
+}

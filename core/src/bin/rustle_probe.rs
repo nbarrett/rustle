@@ -34,8 +34,7 @@ fn run_probe() -> Result<()> {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
-    let marker = env::var("RUSTLE_PROBE_TEXT")
-        .unwrap_or_else(|_| format!("RUSTLEPROBE{stamp}"));
+    let marker = env::var("RUSTLE_PROBE_TEXT").unwrap_or_else(|_| format!("RUSTLEPROBE{stamp}"));
     let pinned = env::var("RUSTLE_PROBE_SESSION").ok();
     let keep = env::var("RUSTLE_PROBE_KEEP").is_ok();
     println!("trusted={}", mac_ax::process_is_trusted());

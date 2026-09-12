@@ -272,7 +272,9 @@ pub fn trim_quiet_edges(samples: &[f32]) -> &[f32] {
         return samples;
     };
     let start = first.saturating_sub(QUIET_EDGE_PAD_SAMPLES);
-    let end = (last + 1).saturating_add(QUIET_EDGE_PAD_SAMPLES).min(samples.len());
+    let end = (last + 1)
+        .saturating_add(QUIET_EDGE_PAD_SAMPLES)
+        .min(samples.len());
     &samples[start..end]
 }
 

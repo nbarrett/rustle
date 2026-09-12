@@ -7,11 +7,11 @@ use std::time::Duration;
 
 use windows::core::{BSTR, GUID};
 use windows::Win32::Media::Audio::{
-    eCapture, eCommunications, eConsole, eMultimedia, IAudioCaptureClient, IAudioClient,
-    IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, WAVEFORMATEX, WAVEFORMATEXTENSIBLE,
-    AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
-    AUDCLNT_STREAMFLAGS_NOPERSIST, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, DEVICE_STATE_ACTIVE,
-    WAVE_FORMAT_PCM,
+    eCapture, eCommunications, eConsole, eMultimedia, IAudioCaptureClient, IAudioClient, IMMDevice,
+    IMMDeviceEnumerator, MMDeviceEnumerator, AUDCLNT_SHAREMODE_SHARED,
+    AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM, AUDCLNT_STREAMFLAGS_NOPERSIST,
+    AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, DEVICE_STATE_ACTIVE, WAVEFORMATEX,
+    WAVEFORMATEXTENSIBLE, WAVE_FORMAT_PCM,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
@@ -179,14 +179,7 @@ fn capture_from_wasapi_until_stopped(
 fn start_wasapi_capture_session(
     preferred_device_name: Option<&str>,
     stop: &AtomicBool,
-) -> Result<(
-    IAudioClient,
-    IAudioCaptureClient,
-    u32,
-    u16,
-    u16,
-    bool,
-)> {
+) -> Result<(IAudioClient, IAudioCaptureClient, u32, u16, u16, bool)> {
     if stop.load(Ordering::SeqCst) {
         return Err(anyhow!("wasapi capture was cancelled"));
     }
@@ -215,10 +208,7 @@ fn start_wasapi_capture_session(
         audio_client.Start()?;
         write_capture_log(&format!(
             "wasapi capture started device={device_name:?} rate={} channels={} bits={} float={}",
-            mix.sample_rate,
-            mix.channels,
-            mix.bits_per_sample,
-            mix.is_float
+            mix.sample_rate, mix.channels, mix.bits_per_sample, mix.is_float
         ));
         Ok((
             audio_client,

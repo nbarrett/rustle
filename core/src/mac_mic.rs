@@ -1,5 +1,5 @@
-use objc2::runtime::AnyClass;
 use objc2::msg_send;
+use objc2::runtime::AnyClass;
 use objc2_foundation::NSString;
 
 const AV_MEDIA_TYPE_AUDIO: &str = "soun";

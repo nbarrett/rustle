@@ -21,10 +21,10 @@ use tauri_plugin_autostart::{AutoLaunchManager, MacosLauncher};
 
 const LAUNCHED_AT_LOGIN_ARGUMENT: &str = "--launched-at-login";
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-mod overlay;
 #[cfg(target_os = "macos")]
 mod mac_setup;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod overlay;
 #[cfg(target_os = "ios")]
 mod phone_keyboard;
 
@@ -165,7 +165,11 @@ fn get_dictation_enabled(app: AppHandle) -> bool {
 }
 
 #[tauri::command]
-async fn download_model(app: AppHandle, file_name: String, download_url: String) -> Result<(), String> {
+async fn download_model(
+    app: AppHandle,
+    file_name: String,
+    download_url: String,
+) -> Result<(), String> {
     let progress_app = app.clone();
     let outcome = tauri::async_runtime::spawn_blocking(move || {
         download_model_file(&file_name, &download_url, |received, total| {
@@ -344,9 +348,7 @@ fn keep_settings_window_above_full_screen_apps(window: &tauri::WebviewWindow) {
     let _ = window.set_visible_on_all_workspaces(true);
     #[cfg(target_os = "macos")]
     {
-        use objc2_app_kit::{
-            NSStatusWindowLevel, NSWindowCollectionBehavior, NSWindowStyleMask,
-        };
+        use objc2_app_kit::{NSStatusWindowLevel, NSWindowCollectionBehavior, NSWindowStyleMask};
         let Ok(raw) = window.ns_window() else {
             return;
         };

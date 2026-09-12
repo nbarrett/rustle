@@ -135,7 +135,13 @@ fn applications_destination() -> PathBuf {
 fn parent_allows_copy(destination: &Path) -> bool {
     destination
         .parent()
-        .map(|parent| parent.is_dir() && !parent.metadata().map(|meta| meta.permissions().readonly()).unwrap_or(true))
+        .map(|parent| {
+            parent.is_dir()
+                && !parent
+                    .metadata()
+                    .map(|meta| meta.permissions().readonly())
+                    .unwrap_or(true)
+        })
         .unwrap_or(false)
 }
 

@@ -208,7 +208,10 @@ mod tests {
 
     #[test]
     fn converts_summarize() {
-        assert_eq!(apply_uk_spellings("Please summarize this."), "Please summarise this.");
+        assert_eq!(
+            apply_uk_spellings("Please summarize this."),
+            "Please summarise this."
+        );
         assert_eq!(apply_uk_spellings("Summarize this."), "Summarise this.");
         assert_eq!(apply_uk_spellings("SUMMARIZE THIS."), "SUMMARISE THIS.");
     }

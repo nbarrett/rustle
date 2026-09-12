@@ -95,8 +95,9 @@ pub fn bundle_looks_like_messages(bundle: &str) -> bool {
         || bundle.eq_ignore_ascii_case("com.apple.iChat")
 }
 
-pub fn bundle_looks_like_chatgpt(bundle: &str) -> bool {
-    bundle.eq_ignore_ascii_case("com.openai.codex")
+pub fn bundle_looks_like_an_openai_desktop_app(bundle: &str) -> bool {
+    bundle.eq_ignore_ascii_case("com.openai.chat")
+        || bundle.eq_ignore_ascii_case("com.openai.codex")
 }
 
 impl FrontApp {
@@ -138,16 +139,20 @@ impl FrontApp {
                 .is_some_and(bundle_looks_like_messages)
     }
 
-    pub fn is_chatgpt(&self) -> bool {
+    pub fn is_an_openai_desktop_app(&self) -> bool {
         self.name.eq_ignore_ascii_case("chatgpt")
+            || self.name.eq_ignore_ascii_case("codex")
             || self
                 .bundle
                 .as_deref()
-                .is_some_and(bundle_looks_like_chatgpt)
+                .is_some_and(bundle_looks_like_an_openai_desktop_app)
     }
 
     pub fn pastes_the_finished_clip(&self) -> bool {
-        self.is_outlook() || self.is_whatsapp() || self.is_messages() || self.is_chatgpt()
+        self.is_outlook()
+            || self.is_whatsapp()
+            || self.is_messages()
+            || self.is_an_openai_desktop_app()
     }
 
     pub fn prefers_clipboard_paste(&self) -> bool {
@@ -833,7 +838,7 @@ fn cf_string_to_rust(value: CFStringRef) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        applescript_literal, bundle_looks_like_chatgpt, bundle_looks_like_iterm,
+        applescript_literal, bundle_looks_like_an_openai_desktop_app, bundle_looks_like_iterm,
         bundle_looks_like_messages, name_looks_like_iterm,
     };
 
@@ -860,9 +865,10 @@ mod tests {
     }
 
     #[test]
-    fn recognises_the_chatgpt_app() {
-        assert!(bundle_looks_like_chatgpt("com.openai.codex"));
-        assert!(!bundle_looks_like_chatgpt("com.annix.rustle"));
+    fn recognises_the_openai_desktop_apps() {
+        assert!(bundle_looks_like_an_openai_desktop_app("com.openai.chat"));
+        assert!(bundle_looks_like_an_openai_desktop_app("com.openai.codex"));
+        assert!(!bundle_looks_like_an_openai_desktop_app("com.annix.rustle"));
     }
 
     #[test]

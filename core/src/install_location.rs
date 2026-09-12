@@ -26,7 +26,9 @@ mod tests {
         assert!(path_looks_like_a_transient_install(
             "/Users/nick/Downloads/Rustle.app"
         ));
-        assert!(path_looks_like_a_transient_install("/Volumes/Rustle/Rustle.app"));
+        assert!(path_looks_like_a_transient_install(
+            "/Volumes/Rustle/Rustle.app"
+        ));
     }
 
     #[test]
@@ -38,6 +40,8 @@ mod tests {
         assert!(!path_is_a_stable_app_install(
             "/private/var/folders/xx/T/AppTranslocation/ABC/d/Rustle.app"
         ));
-        assert!(!path_looks_like_a_transient_install("/Applications/Rustle.app"));
+        assert!(!path_looks_like_a_transient_install(
+            "/Applications/Rustle.app"
+        ));
     }
 }

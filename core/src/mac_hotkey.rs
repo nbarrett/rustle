@@ -11,8 +11,7 @@ use crate::hotkey::HotkeyChoice;
 pub use crate::hotkey::HotkeyEdge;
 
 type CFTypeRef = *mut c_void;
-type EventTapCallback =
-    extern "C" fn(*mut c_void, u32, *mut c_void, *mut c_void) -> *mut c_void;
+type EventTapCallback = extern "C" fn(*mut c_void, u32, *mut c_void, *mut c_void) -> *mut c_void;
 
 const EVENT_KEY_DOWN: u32 = 10;
 const EVENT_KEY_UP: u32 = 11;
@@ -185,8 +184,7 @@ extern "C" fn tap_callback(
 ) -> *mut c_void {
     let context = unsafe { &*(user_info as *const TapContext) };
 
-    if event_type == EVENT_TAP_DISABLED_BY_TIMEOUT
-        || event_type == EVENT_TAP_DISABLED_BY_USER_INPUT
+    if event_type == EVENT_TAP_DISABLED_BY_TIMEOUT || event_type == EVENT_TAP_DISABLED_BY_USER_INPUT
     {
         unsafe { CGEventTapEnable(context.tap_port.get(), true) };
         return event;
