@@ -10,7 +10,7 @@ type WorkerReply =
   | { kind: "ready"; modelId: string }
   | { kind: "progress"; percent: number; file: string }
   | { kind: "notice"; message: string }
-  | { kind: "transcribed"; text: string }
+  | { kind: "transcribed"; text: string; isPreview: boolean }
   | { kind: "failed"; message: string };
 
 const MODEL_CHOICES = [
@@ -21,11 +21,14 @@ const MODEL_CHOICES = [
 const DEFAULT_MODEL_ID = "Xenova/whisper-base.en";
 const CORRECTIONS_STORAGE_KEY = "rustle-web-corrections";
 const BRITISH_STORAGE_KEY = "rustle-web-prefers-british";
+const HEARS_THIS_MACHINE_STORAGE_KEY = "rustle-web-hears-this-machine";
 const MODEL_STORAGE_KEY = "rustle-web-model";
 const HISTORY_STORAGE_KEY = "rustle-web-history";
 const HISTORY_LIMIT = 200;
 const WHISPER_SAMPLE_RATE = 16000;
 const SHORTEST_USEFUL_CLIP_SECONDS = 0.25;
+const LIVE_PREVIEW_INTERVAL_MS = 1200;
+const CLICK_THAT_LATCHES_RECORDING_MS = 400;
 
 function requiredElement<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -54,6 +57,7 @@ const elements = {
   importCorrections: requiredElement<HTMLButtonElement>("import-corrections"),
   correctionsFile: requiredElement<HTMLInputElement>("corrections-file"),
   prefersBritish: requiredElement<HTMLInputElement>("prefers-british"),
+  hearsThisMachine: requiredElement<HTMLInputElement>("hears-this-machine"),
   correctionsStatus: requiredElement<HTMLParagraphElement>("corrections-status"),
   historyList: requiredElement<HTMLDivElement>("history-list"),
   exportHistory: requiredElement<HTMLButtonElement>("export-history"),
@@ -75,10 +79,24 @@ const transcriberWorker = new Worker(new URL("./transcriber-worker.ts", import.m
 
 let modelIsReady = false;
 let recordingStream: MediaStream | null = null;
+let streamWasOpenedForThisMachinesAudio = false;
+
+function releaseRecordingStream(): void {
+  if (!recordingStream) {
+    return;
+  }
+  for (const track of recordingStream.getTracks()) {
+    track.stop();
+  }
+  recordingStream = null;
+}
 let clipRecorder: MediaRecorder | null = null;
 let recordedChunks: Blob[] = [];
 let currentlyRecording = false;
 let transcriptionInFlight = false;
+let previewInFlight = false;
+let recordingIsLatched = false;
+let recordingStartedAt = 0;
 let corrections: Correction[] = [];
 let dictationHistory: HistoryEntry[] = [];
 let wordReplaceEntryIndex: number | null = null;
@@ -485,11 +503,23 @@ function loadSelectedModel(): void {
 }
 
 async function microphoneStream(): Promise<MediaStream> {
-  if (recordingStream && recordingStream.active) {
+  if (
+    recordingStream &&
+    recordingStream.active &&
+    streamWasOpenedForThisMachinesAudio === elements.hearsThisMachine.checked
+  ) {
     return recordingStream;
   }
+  releaseRecordingStream();
+  streamWasOpenedForThisMachinesAudio = elements.hearsThisMachine.checked;
+  const cleanUpTheSpeakersOwnSound = !elements.hearsThisMachine.checked;
   recordingStream = await navigator.mediaDevices.getUserMedia({
-    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    audio: {
+      channelCount: 1,
+      echoCancellation: cleanUpTheSpeakersOwnSound,
+      noiseSuppression: cleanUpTheSpeakersOwnSound,
+      autoGainControl: cleanUpTheSpeakersOwnSound,
+    },
   });
   return recordingStream;
 }
@@ -517,15 +547,19 @@ async function startRecording(): Promise<void> {
       if (event.data.size > 0) {
         recordedChunks.push(event.data);
       }
+      if (currentlyRecording) {
+        void sendPreviewOfWhatHasBeenHeard();
+      }
     });
     clipRecorder.addEventListener("stop", () => {
       void handleFinishedClip();
     });
-    clipRecorder.start();
+    clipRecorder.start(LIVE_PREVIEW_INTERVAL_MS);
     currentlyRecording = true;
+    recordingStartedAt = Date.now();
     elements.holdToTalk.classList.add("listening");
     showEngineState("Listening", "live");
-    showStatus(elements.dictationStatus, "Listening, release to transcribe.");
+    showRecordingHint();
   } catch (error) {
     showEngineState("Needs attention", "fail");
     showStatus(
@@ -541,15 +575,47 @@ function stopRecording(): void {
     return;
   }
   currentlyRecording = false;
-  elements.holdToTalk.classList.remove("listening");
+  recordingIsLatched = false;
+  elements.holdToTalk.classList.remove("listening", "latched");
   showEngineState("Working", "work");
   clipRecorder.stop();
   clipRecorder = null;
 }
 
+function showRecordingHint(): void {
+  showStatus(
+    elements.dictationStatus,
+    recordingIsLatched
+      ? "Recording. Click the microphone again to stop. You can switch to another window."
+      : "Listening, release to transcribe. A quick click keeps it recording.",
+  );
+}
+
+async function sendPreviewOfWhatHasBeenHeard(): Promise<void> {
+  if (previewInFlight || transcriptionInFlight || recordedChunks.length === 0) {
+    return;
+  }
+  previewInFlight = true;
+  try {
+    const audio = await monoSamplesAtWhisperRate(clipSoFar());
+    if (!currentlyRecording || audio.length < WHISPER_SAMPLE_RATE * SHORTEST_USEFUL_CLIP_SECONDS) {
+      previewInFlight = false;
+      return;
+    }
+    transcriberWorker.postMessage({ kind: "transcribe", audio, isPreview: true }, [audio.buffer]);
+  } catch {
+    previewInFlight = false;
+  }
+}
+
+function clipSoFar(): Blob {
+  return new Blob(recordedChunks, { type: recordedChunks[0]?.type ?? "audio/webm" });
+}
+
 async function handleFinishedClip(): Promise<void> {
-  const clip = new Blob(recordedChunks, { type: recordedChunks[0]?.type ?? "audio/webm" });
+  const clip = clipSoFar();
   recordedChunks = [];
+  previewInFlight = false;
   if (clip.size === 0) {
     showEngineState("Idle", "idle");
     showStatus(elements.dictationStatus, "Nothing was recorded.");
@@ -564,7 +630,7 @@ async function handleFinishedClip(): Promise<void> {
       return;
     }
     transcriptionInFlight = true;
-    transcriberWorker.postMessage({ kind: "transcribe", audio }, [audio.buffer]);
+    transcriberWorker.postMessage({ kind: "transcribe", audio, isPreview: false }, [audio.buffer]);
   } catch (error) {
     showEngineState("Needs attention", "fail");
     showStatus(
@@ -590,19 +656,28 @@ async function copyTranscriptToClipboard(): Promise<void> {
   }
 }
 
-function showTranscribedText(rawTranscript: string): void {
-  transcriptionInFlight = false;
+function showTranscribedText(rawTranscript: string, isPreview: boolean): void {
+  if (isPreview) {
+    previewInFlight = false;
+  } else {
+    transcriptionInFlight = false;
+  }
   const polished = polish_transcript_for_the_clipboard(
     rawTranscript,
     activeCorrectionsAsJson(),
     elements.prefersBritish.checked,
   );
   if (!polished) {
-    showEngineState("Idle", "idle");
-    showStatus(elements.dictationStatus, "Nothing usable was heard.");
+    if (!isPreview) {
+      showEngineState("Idle", "idle");
+      showStatus(elements.dictationStatus, "Nothing usable was heard.");
+    }
     return;
   }
   elements.transcript.value = polished;
+  if (isPreview) {
+    return;
+  }
   rememberTranscript(polished);
   showEngineState("Ready", "idle");
   showStatus(elements.dictationStatus, "Ready.");
@@ -633,10 +708,11 @@ function handleWorkerReply(reply: WorkerReply): void {
     return;
   }
   if (reply.kind === "transcribed") {
-    showTranscribedText(reply.text);
+    showTranscribedText(reply.text, reply.isPreview);
     return;
   }
   transcriptionInFlight = false;
+  previewInFlight = false;
   elements.loadModel.disabled = false;
   elements.loadProgress.hidden = true;
   showEngineState("Needs attention", "fail");
@@ -653,10 +729,30 @@ function keyShouldStartDictation(event: KeyboardEvent): boolean {
 function listenForHoldToTalk(): void {
   elements.holdToTalk.addEventListener("pointerdown", (event) => {
     event.preventDefault();
+    if (currentlyRecording && recordingIsLatched) {
+      stopRecording();
+      return;
+    }
     void startRecording();
   });
-  for (const endEvent of ["pointerup", "pointerleave", "pointercancel"]) {
-    elements.holdToTalk.addEventListener(endEvent, () => stopRecording());
+  elements.holdToTalk.addEventListener("pointerup", () => {
+    if (!currentlyRecording || recordingIsLatched) {
+      return;
+    }
+    if (Date.now() - recordingStartedAt < CLICK_THAT_LATCHES_RECORDING_MS) {
+      recordingIsLatched = true;
+      elements.holdToTalk.classList.add("latched");
+      showRecordingHint();
+      return;
+    }
+    stopRecording();
+  });
+  for (const endEvent of ["pointerleave", "pointercancel"]) {
+    elements.holdToTalk.addEventListener(endEvent, () => {
+      if (!recordingIsLatched) {
+        stopRecording();
+      }
+    });
   }
   window.addEventListener("keydown", (event) => {
     if (keyShouldStartDictation(event)) {
@@ -665,12 +761,16 @@ function listenForHoldToTalk(): void {
     }
   });
   window.addEventListener("keyup", (event) => {
-    if (event.code === "Space" && currentlyRecording) {
+    if (event.code === "Space" && currentlyRecording && !recordingIsLatched) {
       event.preventDefault();
       stopRecording();
     }
   });
-  window.addEventListener("blur", () => stopRecording());
+  window.addEventListener("blur", () => {
+    if (!recordingIsLatched && !elements.hearsThisMachine.checked) {
+      stopRecording();
+    }
+  });
 }
 
 async function startRustleWeb(): Promise<void> {
@@ -681,6 +781,8 @@ async function startRustleWeb(): Promise<void> {
   dictationHistory = loadHistory();
   renderHistory();
   elements.prefersBritish.checked = localStorage.getItem(BRITISH_STORAGE_KEY) !== "false";
+  elements.hearsThisMachine.checked =
+    localStorage.getItem(HEARS_THIS_MACHINE_STORAGE_KEY) === "true";
 
   transcriberWorker.addEventListener("message", (event: MessageEvent<WorkerReply>) => {
     handleWorkerReply(event.data);
@@ -735,6 +837,13 @@ async function startRustleWeb(): Promise<void> {
   });
   elements.prefersBritish.addEventListener("change", () => {
     localStorage.setItem(BRITISH_STORAGE_KEY, String(elements.prefersBritish.checked));
+  });
+  elements.hearsThisMachine.addEventListener("change", () => {
+    localStorage.setItem(
+      HEARS_THIS_MACHINE_STORAGE_KEY,
+      String(elements.hearsThisMachine.checked),
+    );
+    releaseRecordingStream();
   });
 
   document.querySelectorAll<HTMLButtonElement>(".tab").forEach((tab) => {

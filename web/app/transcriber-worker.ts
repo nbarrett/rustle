@@ -1,7 +1,7 @@
 import { pipeline, env } from "@huggingface/transformers";
 
 type LoadRequest = { kind: "load"; modelId: string };
-type TranscribeRequest = { kind: "transcribe"; audio: Float32Array };
+type TranscribeRequest = { kind: "transcribe"; audio: Float32Array; isPreview: boolean };
 type WorkerRequest = LoadRequest | TranscribeRequest;
 
 const selfHostedModelOrigin = import.meta.env.VITE_RUSTLE_MODEL_HOST ?? "";
@@ -45,7 +45,7 @@ async function loadModelOnce(modelId: string): Promise<void> {
   self.postMessage({ kind: "ready", modelId });
 }
 
-async function transcribeClip(audio: Float32Array): Promise<void> {
+async function transcribeClip(audio: Float32Array, isPreview: boolean): Promise<void> {
   if (!speechRecogniser) {
     self.postMessage({ kind: "failed", message: "No model is loaded yet." });
     return;
@@ -55,12 +55,14 @@ async function transcribeClip(audio: Float32Array): Promise<void> {
     options: Record<string, unknown>,
   ) => Promise<{ text: string }>;
   const outcome = await recognise(audio, { chunk_length_s: 30, stride_length_s: 5 });
-  self.postMessage({ kind: "transcribed", text: outcome.text ?? "" });
+  self.postMessage({ kind: "transcribed", text: outcome.text ?? "", isPreview });
 }
 
 self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
-  const work = request.kind === "load" ? loadModelOnce(request.modelId) : transcribeClip(request.audio);
+  const work = request.kind === "load"
+      ? loadModelOnce(request.modelId)
+      : transcribeClip(request.audio, request.isPreview);
   work.catch((error: unknown) => {
     self.postMessage({ kind: "failed", message: error instanceof Error ? error.message : String(error) });
   });

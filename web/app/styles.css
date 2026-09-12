@@ -136,3 +136,11 @@ html[data-embedded] #history-list {
   flex: none;
   max-height: 340px;
 }
+
+.hold-mic.latched {
+  background: #0f6f63;
+}
+
+.hold-mic.latched .hold-mic-ring {
+  animation: hold-mic-pulse 1.8s ease-out infinite;
+}

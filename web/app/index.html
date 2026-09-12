@@ -34,7 +34,7 @@
               </span>
             </button>
             <p id="dictation-status" class="field-hint">Preparing speech recognition…</p>
-            <p class="field-hint">Hold the button, or hold Space while this tab is focused.</p>
+            <p class="field-hint">Hold the button, or hold Space while this tab is focused. A quick click keeps it recording until you click again, so you can switch windows.</p>
             <button id="copy-transcript" class="secondary" type="button">Copy transcript</button>
           </div>
           <div class="field">
@@ -91,6 +91,20 @@
               <span class="switch-track"></span>
               <span class="switch-caption">Use British spellings</span>
             </label>
+          </div>
+          <div class="field">
+            <label class="field-label" for="hears-this-machine">Other audio</label>
+            <label class="switch">
+              <input id="hears-this-machine" type="checkbox" />
+              <span class="switch-track"></span>
+              <span class="switch-caption">Transcribe audio playing on this machine</span>
+            </label>
+            <p class="field-hint">
+              Turn this on to transcribe YouTube or the radio through the microphone. Normally the
+              browser removes anything coming from your own speakers, which is why your voice works
+              but a video does not. Your own voice still works either way, and holding to talk keeps
+              recording while you click on the other window.
+            </p>
           </div>
           <div class="setup-banner">
             <p class="field-label">Browser edition</p>
