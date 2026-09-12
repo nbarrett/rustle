@@ -34,7 +34,8 @@
     "targets": "all",
     "macOS": {
       "signingIdentity": "Developer ID Application: Nicholas Barrett (93S4343SAT)",
-      "hardenedRuntime": false
+      "hardenedRuntime": true,
+      "entitlements": "Entitlements.plist"
     },
     "icon": [
       "icons/32x32.png",
