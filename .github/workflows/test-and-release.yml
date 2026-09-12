@@ -226,11 +226,18 @@ jobs:
 
       - name: Write updater bundle config
         shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
-          if [[ "${{ matrix.pack }}" == "macos-aarch64" ]]; then
-            printf '%s\n' '{"bundle":{"createUpdaterArtifacts":true,"macOS":{"signingIdentity":"-"}}}' > updater-bundle.json
-          else
+          if [[ "${{ matrix.pack }}" != "macos-aarch64" ]]; then
             printf '%s\n' '{"bundle":{"createUpdaterArtifacts":true}}' > updater-bundle.json
+          elif [[ -n "${APPLE_SIGNING_IDENTITY}" ]]; then
+            printf '{"bundle":{"createUpdaterArtifacts":true,"macOS":{"signingIdentity":"%s"}}}\n' "${APPLE_SIGNING_IDENTITY}" > updater-bundle.json
+            echo "Signing the Mac app with ${APPLE_SIGNING_IDENTITY}"
+          else
+            printf '%s\n' '{"bundle":{"createUpdaterArtifacts":true,"macOS":{"signingIdentity":"-"}}}' > updater-bundle.json
+            echo "No APPLE_SIGNING_IDENTITY secret, falling back to an ad-hoc signature."
+            echo "Permissions granted to an earlier build will not carry over to this one."
           fi
 
       - name: Build Mac app
@@ -238,6 +245,12 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: pnpm tauri build --bundles app,dmg --config updater-bundle.json
 
       - name: Build Windows app
