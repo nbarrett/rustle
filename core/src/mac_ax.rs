@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr;
 use std::sync::{Mutex, OnceLock};
@@ -151,21 +151,29 @@ pub fn text_before_the_caret_in_the_target_field(target_pid: Option<i32>) -> Res
     }
 }
 
-fn pids_already_asked_to_build_an_accessibility_tree() -> &'static Mutex<HashSet<i32>> {
-    static PIDS: OnceLock<Mutex<HashSet<i32>>> = OnceLock::new();
-    PIDS.get_or_init(|| Mutex::new(HashSet::new()))
+fn apps_asked_to_build_an_accessibility_tree() -> &'static Mutex<HashMap<i32, bool>> {
+    static APPS: OnceLock<Mutex<HashMap<i32, bool>>> = OnceLock::new();
+    APPS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn app_only_reveals_its_text_when_asked(pid: i32) -> bool {
+    apps_asked_to_build_an_accessibility_tree()
+        .lock()
+        .map(|asked| asked.get(&pid).copied().unwrap_or(false))
+        .unwrap_or(false)
 }
 
 unsafe fn ask_chromium_to_build_its_accessibility_tree(application: AXUIElementRef, pid: i32) {
-    let Ok(mut asked) = pids_already_asked_to_build_an_accessibility_tree().lock() else {
+    let Ok(mut asked) = apps_asked_to_build_an_accessibility_tree().lock() else {
         return;
     };
-    if !asked.insert(pid) {
+    if asked.contains_key(&pid) {
         return;
     }
     let attribute = cf_string("AXManualAccessibility");
-    AXUIElementSetAttributeValue(application, attribute, kCFBooleanTrue);
+    let status = AXUIElementSetAttributeValue(application, attribute, kCFBooleanTrue);
     CFRelease(attribute);
+    asked.insert(pid, status == AX_ERROR_SUCCESS);
 }
 
 unsafe fn copy_focused_ui_element(target_pid: Option<i32>) -> Result<CFTypeRef> {

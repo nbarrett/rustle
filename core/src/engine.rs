@@ -1035,7 +1035,10 @@ fn target_skips_return(
 ) -> bool {
     #[cfg(target_os = "macos")]
     {
-        target.is_some_and(|app| app.pastes_the_finished_clip())
+        target.is_some_and(|app| {
+            app.pastes_the_finished_clip()
+                || crate::mac_ax::app_only_reveals_its_text_when_asked(app.pid)
+        })
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -1048,7 +1051,10 @@ fn target_uses_typed_keys(
 ) -> bool {
     #[cfg(target_os = "macos")]
     {
-        target.is_some_and(|app| app.pastes_the_finished_clip())
+        target.is_some_and(|app| {
+            app.pastes_the_finished_clip()
+                || crate::mac_ax::app_only_reveals_its_text_when_asked(app.pid)
+        })
     }
     #[cfg(not(target_os = "macos"))]
     {
