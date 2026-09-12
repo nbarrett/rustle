@@ -28,7 +28,6 @@ const HISTORY_LIMIT = 200;
 const WHISPER_SAMPLE_RATE = 16000;
 const SHORTEST_USEFUL_CLIP_SECONDS = 0.25;
 const LIVE_PREVIEW_INTERVAL_MS = 1200;
-const CLICK_THAT_LATCHES_RECORDING_MS = 400;
 
 function requiredElement<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -96,7 +95,6 @@ let currentlyRecording = false;
 let transcriptionInFlight = false;
 let previewInFlight = false;
 let recordingIsLatched = false;
-let recordingStartedAt = 0;
 let corrections: Correction[] = [];
 let dictationHistory: HistoryEntry[] = [];
 let wordReplaceEntryIndex: number | null = null;
@@ -556,8 +554,8 @@ async function startRecording(): Promise<void> {
     });
     clipRecorder.start(LIVE_PREVIEW_INTERVAL_MS);
     currentlyRecording = true;
-    recordingStartedAt = Date.now();
     elements.holdToTalk.classList.add("listening");
+    elements.holdToTalk.classList.toggle("latched", recordingIsLatched);
     showEngineState("Listening", "live");
     showRecordingHint();
   } catch (error) {
@@ -587,7 +585,7 @@ function showRecordingHint(): void {
     elements.dictationStatus,
     recordingIsLatched
       ? "Recording. Click the microphone again to stop. You can switch to another window."
-      : "Listening, release to transcribe. A quick click keeps it recording.",
+      : "Listening, release the space bar to finish.",
   );
 }
 
@@ -727,33 +725,15 @@ function keyShouldStartDictation(event: KeyboardEvent): boolean {
 }
 
 function listenForHoldToTalk(): void {
-  elements.holdToTalk.addEventListener("pointerdown", (event) => {
+  elements.holdToTalk.addEventListener("click", (event) => {
     event.preventDefault();
-    if (currentlyRecording && recordingIsLatched) {
+    if (currentlyRecording) {
       stopRecording();
       return;
     }
+    recordingIsLatched = true;
     void startRecording();
   });
-  elements.holdToTalk.addEventListener("pointerup", () => {
-    if (!currentlyRecording || recordingIsLatched) {
-      return;
-    }
-    if (Date.now() - recordingStartedAt < CLICK_THAT_LATCHES_RECORDING_MS) {
-      recordingIsLatched = true;
-      elements.holdToTalk.classList.add("latched");
-      showRecordingHint();
-      return;
-    }
-    stopRecording();
-  });
-  for (const endEvent of ["pointerleave", "pointercancel"]) {
-    elements.holdToTalk.addEventListener(endEvent, () => {
-      if (!recordingIsLatched) {
-        stopRecording();
-      }
-    });
-  }
   window.addEventListener("keydown", (event) => {
     if (keyShouldStartDictation(event)) {
       event.preventDefault();
