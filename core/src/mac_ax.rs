@@ -1,6 +1,8 @@
 use anyhow::{anyhow, Result};
+use std::collections::HashSet;
 use std::ffi::c_void;
 use std::ptr;
+use std::sync::{Mutex, OnceLock};
 
 type CFTypeRef = *const c_void;
 type CFStringRef = *const c_void;
@@ -149,6 +151,23 @@ pub fn text_before_the_caret_in_the_target_field(target_pid: Option<i32>) -> Res
     }
 }
 
+fn pids_already_asked_to_build_an_accessibility_tree() -> &'static Mutex<HashSet<i32>> {
+    static PIDS: OnceLock<Mutex<HashSet<i32>>> = OnceLock::new();
+    PIDS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+unsafe fn ask_chromium_to_build_its_accessibility_tree(application: AXUIElementRef, pid: i32) {
+    let Ok(mut asked) = pids_already_asked_to_build_an_accessibility_tree().lock() else {
+        return;
+    };
+    if !asked.insert(pid) {
+        return;
+    }
+    let attribute = cf_string("AXManualAccessibility");
+    AXUIElementSetAttributeValue(application, attribute, kCFBooleanTrue);
+    CFRelease(attribute);
+}
+
 unsafe fn copy_focused_ui_element(target_pid: Option<i32>) -> Result<CFTypeRef> {
     let application = match target_pid {
         Some(pid) => AXUIElementCreateApplication(pid),
@@ -156,6 +175,9 @@ unsafe fn copy_focused_ui_element(target_pid: Option<i32>) -> Result<CFTypeRef> 
     };
     if application.is_null() {
         return Err(anyhow!("accessibility system element was unavailable"));
+    }
+    if let Some(pid) = target_pid {
+        ask_chromium_to_build_its_accessibility_tree(application, pid);
     }
     let focused_attribute = cf_string("AXFocusedUIElement");
     let mut focused: CFTypeRef = ptr::null();

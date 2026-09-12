@@ -29,7 +29,7 @@ const OVERLAY_MIN_WIDTH: f64 = 220.0;
 const OVERLAY_MAX_TEXT_HEIGHT: f64 = 42.0;
 const OVERLAY_BOTTOM_MARGIN: f64 = 96.0;
 const OVERLAY_CORNER_RADIUS: f64 = 12.0;
-const OVERLAY_HIDE_DELAY: Duration = Duration::from_millis(1400);
+const OVERLAY_HIDE_DELAY: Duration = Duration::from_millis(350);
 
 #[cfg(target_os = "macos")]
 struct NativeOverlay {

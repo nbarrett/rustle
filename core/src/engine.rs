@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const LIVE_TRANSCRIPTION_INTERVAL: Duration = Duration::from_millis(450);
+const LIVE_TRANSCRIPTION_INTERVAL: Duration = Duration::from_millis(200);
 const LIVE_PREVIEW_PASS_WAIT: Duration = Duration::from_secs(3);
 const LIVE_TRANSCRIPT_MINIMUM_SECONDS: f32 = 0.35;
 const LIVE_PREVIEW_MINIMUM_SECONDS: f32 = 0.4;
