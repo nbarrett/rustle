@@ -33,7 +33,7 @@
     "active": true,
     "targets": "all",
     "macOS": {
-      "signingIdentity": "Apple Development: nick.barrett36@gmail.com (9XQ77YVJ7R)",
+      "signingIdentity": "Developer ID Application: Nicholas Barrett (93S4343SAT)",
       "hardenedRuntime": false
     },
     "icon": [
