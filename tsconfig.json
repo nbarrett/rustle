@@ -3,7 +3,11 @@
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -11,7 +15,15 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "useDefineForClassFields": true
+    "useDefineForClassFields": true,
+    "types": [
+      "vite/client"
+    ]
   },
-  "include": ["ui/src/**/*.ts", "vite.config.ts"]
+  "include": [
+    "ui/src/**/*.ts",
+    "web/app/**/*.ts",
+    "vite.config.ts",
+    "vite.web.config.ts"
+  ]
 }

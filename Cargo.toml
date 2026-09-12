@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "src-tauri"]
+members = ["core", "src-tauri", "web/wasm"]
 resolver = "2"
 
 [profile.dev]

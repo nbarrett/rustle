@@ -1,6 +1,6 @@
 [package]
 name = "rustle-core"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 license = "MIT"
 description = "Reusable dictation core for Rustle: config, audio capture, Whisper transcription, hotkey listening and keystroke injection."
@@ -21,7 +21,8 @@ required-features = ["runtime"]
 
 [features]
 default = ["runtime"]
-runtime = ["dep:whisper-rs", "dep:cpal", "dep:arboard"]
+runtime = ["files", "dep:whisper-rs", "dep:cpal", "dep:arboard"]
+files = ["dep:dirs", "dep:ureq"]
 
 [dependencies]
 anyhow = "1"
@@ -29,8 +30,8 @@ cpal = { version = "0.15", optional = true }
 whisper-rs = { version = "0.12", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-dirs = "5"
-ureq = "2"
+dirs = { version = "5", optional = true }
+ureq = { version = "2", optional = true }
 arboard = { version = "3", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

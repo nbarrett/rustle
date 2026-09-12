@@ -17,14 +17,17 @@ const CLIPBOARD_RESTORE_AFTER_PASTE: Duration = Duration::from_millis(800);
 use crate::audio::{
     clip_has_a_speech_peak, clip_is_quieter_than_speech, downmix_to_mono,
     message_for_a_failed_recording, recording_error_looks_like_a_closed_microphone,
-    resample_linear, start_recording, stop_recording, ActiveRecording,
-    WHISPER_SAMPLE_RATE,
+    resample_linear, start_recording, stop_recording, ActiveRecording, WHISPER_SAMPLE_RATE,
 };
 use crate::config::{apply_corrections, resolve_model_path, Config, Correction};
 use crate::transcribe::{
     final_pass_only_extends_the_spoken_words, final_pass_threw_away_the_spoken_words,
     transcript_is_a_whisper_blank_phrase, transcript_is_only_thank_you,
     without_a_trailing_whisper_thank_you, WhisperTranscriber,
+};
+use crate::transcript::{
+    caret_text_leaves_a_sentence_open, without_a_capital_when_the_sentence_continues,
+    without_trailing_ellipsis,
 };
 use crate::uk_english::apply_locale_english_spelling;
 
@@ -151,7 +154,8 @@ fn spawn_hotkey_listener(
             ));
             if !granted && !listen_event_access_is_granted() {
                 report_status(DictationStatus::NeedsPermission(
-                    "Input Monitoring is off. Enable Rustle there, then quit and reopen.".to_string(),
+                    "Input Monitoring is off. Enable Rustle there, then quit and reopen."
+                        .to_string(),
                 ));
             }
         }
@@ -398,9 +402,7 @@ fn run_dictation_controller(
                         crate::output::restore_system_output(saved);
                     }
                     let Some((_, transcriber)) = loaded_model.clone() else {
-                        report_status(DictationStatus::Failed(
-                            "model was not loaded".to_string(),
-                        ));
+                        report_status(DictationStatus::Failed("model was not loaded".to_string()));
                         continue;
                     };
                     let (samples, sample_rate, channels) = stop_recording(active);
@@ -409,7 +411,7 @@ fn run_dictation_controller(
                         {
                             insert_target
                                 .as_ref()
-                                .is_some_and(|app| app.is_outlook() || app.is_whatsapp())
+                                .is_some_and(|app| app.pastes_the_finished_clip())
                         }
                         #[cfg(not(target_os = "macos"))]
                         {
@@ -522,8 +524,7 @@ fn wait_for_release_then_drain_live_previews(
                 ControllerCommand::StartRecording => return true,
             }
         }
-        if !live_pass_in_flight.load(Ordering::SeqCst)
-            || started.elapsed() > LIVE_PREVIEW_PASS_WAIT
+        if !live_pass_in_flight.load(Ordering::SeqCst) || started.elapsed() > LIVE_PREVIEW_PASS_WAIT
         {
             if live_pass_in_flight.load(Ordering::SeqCst) {
                 write_engine_log("live preview still running; continuing to final pass");
@@ -556,57 +557,6 @@ fn live_transcript_should_be_typed(text: &str) -> bool {
 }
 
 #[cfg(any(test, target_os = "macos"))]
-fn caret_text_leaves_a_sentence_open(text_before_caret: &str) -> bool {
-    for character in text_before_caret.chars().rev() {
-        if character == '\n' || character == '\r' {
-            return false;
-        }
-        if character.is_whitespace()
-            || matches!(character, '(' | '[' | '{' | '"' | '\'' | '“' | '‘')
-        {
-            continue;
-        }
-        return !matches!(character, '.' | '!' | '?' | '…');
-    }
-    false
-}
-
-fn without_a_capital_when_the_sentence_continues(text: &str, sentence_continues: bool) -> String {
-    if !sentence_continues {
-        return text.to_string();
-    }
-    let Some(first_letter_index) = text.find(|character: char| character.is_alphabetic()) else {
-        return text.to_string();
-    };
-    let first_word: String = text[first_letter_index..]
-        .chars()
-        .take_while(|character| !character.is_whitespace())
-        .collect();
-    if first_word_must_keep_its_capital(&first_word) {
-        return text.to_string();
-    }
-    let mut characters = text[first_letter_index..].chars();
-    let Some(first_letter) = characters.next() else {
-        return text.to_string();
-    };
-    format!(
-        "{}{}{}",
-        &text[..first_letter_index],
-        first_letter.to_lowercase(),
-        characters.as_str()
-    )
-}
-
-fn first_word_must_keep_its_capital(word: &str) -> bool {
-    let trimmed = word.trim_end_matches(|character: char| !character.is_alphanumeric());
-    if trimmed == "I" || trimmed.starts_with("I'") || trimmed.starts_with("I’") {
-        return true;
-    }
-    trimmed
-        .chars()
-        .skip(1)
-        .any(|character| character.is_uppercase())
-}
 
 fn dictation_starts_inside_an_open_sentence(
     #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
@@ -620,7 +570,9 @@ fn dictation_starts_inside_an_open_sentence(
         {
             return false;
         }
-        match crate::mac_ax::text_before_the_caret_in_the_focused_field() {
+        match crate::mac_ax::text_before_the_caret_in_the_target_field(
+            insert_target.map(|app| app.pid),
+        ) {
             Ok(text_before_caret) => {
                 let open = caret_text_leaves_a_sentence_open(&text_before_caret);
                 write_engine_log(&format!(
@@ -643,7 +595,10 @@ fn dictation_starts_inside_an_open_sentence(
 
 fn spoken_word_count(text: &str) -> usize {
     text.split_whitespace()
-        .filter(|word| word.chars().any(|character| character.is_ascii_alphanumeric()))
+        .filter(|word| {
+            word.chars()
+                .any(|character| character.is_ascii_alphanumeric())
+        })
         .count()
 }
 
@@ -701,7 +656,9 @@ fn should_skip_typing(audio: &[f32], spoken: &str) -> bool {
     if clip_sounds_like_speech {
         return false;
     }
-    !spoken.chars().any(|character| character.is_ascii_alphanumeric())
+    !spoken
+        .chars()
+        .any(|character| character.is_ascii_alphanumeric())
 }
 
 fn start_live_preview_pass(
@@ -723,8 +680,7 @@ fn start_live_preview_pass(
     let captured = active.samples_handle().lock().unwrap().clone();
     let sample_rate = active.sample_rate();
     let channels = active.channels();
-    let captured_seconds =
-        captured.len() as f32 / (sample_rate as f32 * channels.max(1) as f32);
+    let captured_seconds = captured.len() as f32 / (sample_rate as f32 * channels.max(1) as f32);
     if captured_seconds < LIVE_PREVIEW_MINIMUM_SECONDS {
         return;
     }
@@ -782,7 +738,13 @@ fn apply_live_preview(
             insert_target,
         )
     {
-        match sync_focused_text_with_ax_only(inserted_text, &to_type, insert_origin) {
+        match sync_target_text_with_ax_only(
+            inserted_text,
+            &to_type,
+            insert_origin,
+            #[cfg(target_os = "macos")]
+            insert_target,
+        ) {
             Ok(()) => *inserted_text = to_type.clone(),
             Err(error) => {
                 write_engine_log(&format!("live AX insert disabled: {error}"));
@@ -838,13 +800,6 @@ fn transcribe_captured_samples(
     }
     write_engine_log(&format!("live preview chars={}", shown.chars().count()));
     Some(shown.to_string())
-}
-
-fn without_trailing_ellipsis(text: &str) -> &str {
-    text.trim_end()
-        .trim_end_matches("...")
-        .trim_end_matches('…')
-        .trim_end()
 }
 
 fn transcript_looks_cut_short(text: &str) -> bool {
@@ -928,9 +883,8 @@ fn transcribe_and_type(
     let mono = downmix_to_mono(&samples, channels);
     let audio = resample_linear(&mono, sample_rate, WHISPER_SAMPLE_RATE);
 
-    let heard = without_a_trailing_whisper_thank_you(without_trailing_ellipsis(
-        heard_while_holding,
-    ));
+    let heard =
+        without_a_trailing_whisper_thank_you(without_trailing_ellipsis(heard_while_holding));
     let typed_so_far = already_inserted.to_string();
     if !recording_active.load(Ordering::SeqCst) {
         report_status(DictationStatus::Transcribing);
@@ -967,7 +921,10 @@ fn transcribe_and_type(
 
     let spoken = transcript_to_type_after_release(&typed_so_far, &heard, &spoken);
     if spoken != typed_so_far && spoken != heard {
-        write_engine_log(&format!("using final transcript chars={}", spoken.chars().count()));
+        write_engine_log(&format!(
+            "using final transcript chars={}",
+            spoken.chars().count()
+        ));
     } else if spoken == typed_so_far && !typed_so_far.is_empty() {
         write_engine_log("kept already typed transcript");
     } else if spoken == heard && spoken != typed_so_far {
@@ -999,10 +956,11 @@ fn transcribe_and_type(
                 #[cfg(not(target_os = "macos"))]
                 None,
             )?,
-            InsertKind::Unchanged if target_is_iterm(
-                #[cfg(target_os = "macos")]
-                insert_target,
-            ) =>
+            InsertKind::Unchanged
+                if target_is_iterm(
+                    #[cfg(target_os = "macos")]
+                    insert_target,
+                ) =>
             {
                 apply_iterm_text_delta(
                     "",
@@ -1061,7 +1019,9 @@ enum InsertKind {
     OwnUi,
 }
 
-fn target_is_iterm(#[cfg(target_os = "macos")] target: Option<&crate::mac_paste::FrontApp>) -> bool {
+fn target_is_iterm(
+    #[cfg(target_os = "macos")] target: Option<&crate::mac_paste::FrontApp>,
+) -> bool {
     #[cfg(target_os = "macos")]
     {
         target.is_some_and(|app| app.is_iterm())
@@ -1077,7 +1037,7 @@ fn target_skips_return(
 ) -> bool {
     #[cfg(target_os = "macos")]
     {
-        target.is_some_and(|app| app.is_outlook() || app.is_whatsapp())
+        target.is_some_and(|app| app.pastes_the_finished_clip())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -1090,7 +1050,7 @@ fn target_uses_typed_keys(
 ) -> bool {
     #[cfg(target_os = "macos")]
     {
-        target.is_some_and(|app| app.is_outlook() || app.is_whatsapp())
+        target.is_some_and(|app| app.pastes_the_finished_clip())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -1114,7 +1074,7 @@ fn insert_text_for_target(
             write_engine_log("insert skipped; no other app to type into");
             return Ok(InsertKind::OwnUi);
         }
-        if target.is_some_and(|app| app.is_outlook() || app.is_whatsapp()) {
+        if target.is_some_and(|app| app.pastes_the_finished_clip()) {
             if is_live {
                 return Ok(InsertKind::Unchanged);
             }
@@ -1151,9 +1111,7 @@ fn insert_text_for_target(
                 if let Err(error) = crate::mac_paste::activate_pid(app.pid) {
                     write_engine_log(&format!("activate failed: {error}"));
                 }
-                crate::mac_paste::post_delete_keystrokes(
-                    previous.chars().count() - prefix,
-                )?;
+                crate::mac_paste::post_delete_keystrokes(previous.chars().count() - prefix)?;
             }
             if !addition.is_empty() {
                 if let Err(error) = crate::mac_paste::activate_pid(app.pid) {
@@ -1201,11 +1159,7 @@ fn insert_text_for_target(
     }
 }
 
-fn apply_system_events_text_delta(
-    previous: &str,
-    current: &str,
-    press_return: bool,
-) -> Result<()> {
+fn apply_system_events_text_delta(previous: &str, current: &str, press_return: bool) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
         let prefix = shared_prefix_char_count(previous, current);
@@ -1258,7 +1212,10 @@ fn apply_iterm_text_delta(
     }
 }
 
-fn report_insert_problem(report_status: &(dyn Fn(DictationStatus) + Send + Sync), error: &anyhow::Error) {
+fn report_insert_problem(
+    report_status: &(dyn Fn(DictationStatus) + Send + Sync),
+    error: &anyhow::Error,
+) {
     write_engine_log(&format!("insert problem: {error}"));
     report_status(DictationStatus::Failed(error.to_string()));
 }
@@ -1271,18 +1228,23 @@ fn shared_prefix_char_count(left: &str, right: &str) -> usize {
         .count()
 }
 
-fn sync_focused_text_with_ax_only(
+fn sync_target_text_with_ax_only(
     previous: &str,
     current: &str,
     insert_origin: &mut Option<i64>,
+    #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
 ) -> Result<()> {
     if current == previous {
         return Ok(());
     }
     #[cfg(target_os = "macos")]
     {
-        let origin =
-            crate::mac_ax::replace_in_focused_field(*insert_origin, previous, current)?;
+        let origin = crate::mac_ax::replace_in_target_field(
+            insert_target.map(|app| app.pid),
+            *insert_origin,
+            previous,
+            current,
+        )?;
         *insert_origin = Some(origin);
         write_engine_log(&format!("ax insert ok origin={origin}"));
         return Ok(());
@@ -1306,7 +1268,12 @@ fn sync_focused_text_to_transcript(
     #[cfg(target_os = "macos")]
     {
         if !target_is_iterm(insert_target) && !target_uses_typed_keys(insert_target) {
-            match crate::mac_ax::replace_in_focused_field(*insert_origin, previous, current) {
+            match crate::mac_ax::replace_in_target_field(
+                insert_target.map(|app| app.pid),
+                *insert_origin,
+                previous,
+                current,
+            ) {
                 Ok(origin) => {
                     *insert_origin = Some(origin);
                     write_engine_log(&format!("ax insert ok origin={origin}"));
@@ -1438,9 +1405,15 @@ mod tests {
         assert!(!should_skip_typing(&audio, "Thank you."));
         assert!(!should_skip_typing(&audio, "Thanks"));
         assert!(!should_skip_typing(&audio, "Thank you so much!"));
-        assert!(!should_skip_typing(&audio, "Please send the invoice, thank you"));
+        assert!(!should_skip_typing(
+            &audio,
+            "Please send the invoice, thank you"
+        ));
         assert!(should_skip_typing(&audio, "Thanks for watching."));
-        assert!(should_skip_typing(&audio, "Subtitles by the Amara.org community"));
+        assert!(should_skip_typing(
+            &audio,
+            "Subtitles by the Amara.org community"
+        ));
         assert!(!live_transcript_should_be_typed("Thank you."));
         assert!(live_transcript_should_be_typed(
             "Please send the invoice, thank you"
@@ -1492,7 +1465,10 @@ mod tests {
             without_a_capital_when_the_sentence_continues("\"Quite so\", he said.", true),
             "\"quite so\", he said."
         );
-        assert_eq!(without_a_capital_when_the_sentence_continues("42 miles.", true), "42 miles.");
+        assert_eq!(
+            without_a_capital_when_the_sentence_continues("42 miles.", true),
+            "42 miles."
+        );
     }
 
     #[test]

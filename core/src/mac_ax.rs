@@ -43,6 +43,7 @@ extern "C" {
     static kAXTrustedCheckOptionPrompt: CFStringRef;
     fn AXIsProcessTrusted() -> bool;
     fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> bool;
+    fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
     fn AXUIElementCreateSystemWide() -> AXUIElementRef;
     fn AXUIElementCopyAttributeValue(
         element: AXUIElementRef,
@@ -113,9 +114,14 @@ pub fn request_accessibility_prompt() -> bool {
     }
 }
 
-pub fn replace_in_focused_field(origin_utf16: Option<i64>, previous: &str, current: &str) -> Result<i64> {
+pub fn replace_in_target_field(
+    target_pid: Option<i32>,
+    origin_utf16: Option<i64>,
+    previous: &str,
+    current: &str,
+) -> Result<i64> {
     unsafe {
-        let focused = copy_focused_ui_element()?;
+        let focused = copy_focused_ui_element(target_pid)?;
         let previous_len = utf16_len(previous);
         let origin = match origin_utf16 {
             Some(origin) => origin,
@@ -131,31 +137,32 @@ pub fn replace_in_focused_field(origin_utf16: Option<i64>, previous: &str, curre
     }
 }
 
-pub fn text_before_the_caret_in_the_focused_field() -> Result<String> {
+pub fn text_before_the_caret_in_the_target_field(target_pid: Option<i32>) -> Result<String> {
     unsafe {
-        let focused = copy_focused_ui_element()?;
+        let focused = copy_focused_ui_element(target_pid)?;
         let caret = copy_selected_range(focused as AXUIElementRef);
         let field_text = copy_string_attribute(focused as AXUIElementRef, "AXValue");
         CFRelease(focused);
         let caret_location = caret?.location.max(0) as usize;
-        let prefix_utf16: Vec<u16> = field_text?
-            .encode_utf16()
-            .take(caret_location)
-            .collect();
+        let prefix_utf16: Vec<u16> = field_text?.encode_utf16().take(caret_location).collect();
         Ok(String::from_utf16_lossy(&prefix_utf16))
     }
 }
 
-unsafe fn copy_focused_ui_element() -> Result<CFTypeRef> {
-    let system = AXUIElementCreateSystemWide();
-    if system.is_null() {
+unsafe fn copy_focused_ui_element(target_pid: Option<i32>) -> Result<CFTypeRef> {
+    let application = match target_pid {
+        Some(pid) => AXUIElementCreateApplication(pid),
+        None => AXUIElementCreateSystemWide(),
+    };
+    if application.is_null() {
         return Err(anyhow!("accessibility system element was unavailable"));
     }
     let focused_attribute = cf_string("AXFocusedUIElement");
     let mut focused: CFTypeRef = ptr::null();
-    let focused_status = AXUIElementCopyAttributeValue(system, focused_attribute, &mut focused);
+    let focused_status =
+        AXUIElementCopyAttributeValue(application, focused_attribute, &mut focused);
     CFRelease(focused_attribute);
-    CFRelease(system as CFTypeRef);
+    CFRelease(application as CFTypeRef);
     if focused_status == AX_ERROR_API_DISABLED {
         return Err(anyhow!(
             "could not read the focused field (AX {AX_ERROR_API_DISABLED})"
@@ -218,7 +225,11 @@ fn copy_selected_range(element: AXUIElementRef) -> Result<CFRange> {
             location: 0,
             length: 0,
         };
-        let ok = AXValueGetValue(value as AXValueRef, AX_VALUE_CF_RANGE, &mut range as *mut CFRange as *mut c_void);
+        let ok = AXValueGetValue(
+            value as AXValueRef,
+            AX_VALUE_CF_RANGE,
+            &mut range as *mut CFRange as *mut c_void,
+        );
         CFRelease(value);
         if !ok {
             return Err(anyhow!("caret position was not a text range"));

@@ -6,3 +6,9 @@
 /src-tauri/gen/apple/assets
 /src-tauri/gen/apple/Externals
 .DS_Store
+
+dist-web
+web/wasm/pkg
+.claude/
+
+docs/app

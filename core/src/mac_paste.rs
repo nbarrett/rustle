@@ -90,13 +90,19 @@ pub fn bundle_looks_like_iterm(bundle: &str) -> bool {
     bundle.eq_ignore_ascii_case("com.googlecode.iterm2")
 }
 
+pub fn bundle_looks_like_messages(bundle: &str) -> bool {
+    bundle.eq_ignore_ascii_case("com.apple.MobileSMS")
+        || bundle.eq_ignore_ascii_case("com.apple.iChat")
+}
+
+pub fn bundle_looks_like_chatgpt(bundle: &str) -> bool {
+    bundle.eq_ignore_ascii_case("com.openai.codex")
+}
+
 impl FrontApp {
     pub fn is_iterm(&self) -> bool {
         name_looks_like_iterm(&self.name)
-            || self
-                .bundle
-                .as_deref()
-                .is_some_and(bundle_looks_like_iterm)
+            || self.bundle.as_deref().is_some_and(bundle_looks_like_iterm)
     }
 
     pub fn is_ours(&self) -> bool {
@@ -124,10 +130,29 @@ impl FrontApp {
                 .is_some_and(|bundle| bundle.eq_ignore_ascii_case("net.whatsapp.WhatsApp"))
     }
 
+    pub fn is_messages(&self) -> bool {
+        self.name.eq_ignore_ascii_case("messages")
+            || self
+                .bundle
+                .as_deref()
+                .is_some_and(bundle_looks_like_messages)
+    }
+
+    pub fn is_chatgpt(&self) -> bool {
+        self.name.eq_ignore_ascii_case("chatgpt")
+            || self
+                .bundle
+                .as_deref()
+                .is_some_and(bundle_looks_like_chatgpt)
+    }
+
+    pub fn pastes_the_finished_clip(&self) -> bool {
+        self.is_outlook() || self.is_whatsapp() || self.is_messages() || self.is_chatgpt()
+    }
+
     pub fn prefers_clipboard_paste(&self) -> bool {
         let lower = self.name.to_ascii_lowercase();
-        self.is_outlook()
-            || self.is_whatsapp()
+        self.pastes_the_finished_clip()
             || lower.contains("teams")
             || lower.contains("slack")
             || lower.contains("chrome")
@@ -152,7 +177,7 @@ pub fn frontmost_app() -> Option<FrontApp> {
 
 pub fn insert_target_app() -> Option<FrontApp> {
     let mut app = if let Some(app) = workspace_front_app() {
-        if name_is_chrome_ui(&app.name) {
+        if app.is_ours() || name_is_chrome_ui(&app.name) {
             window_list_front_app()
         } else {
             Some(app)
@@ -378,11 +403,7 @@ end tell"#;
         ))
     })?;
     let mut parts = raw.split("|||");
-    let session_id = parts
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let session_id = parts.next().unwrap_or("").trim().to_string();
     let session_name = parts.next().unwrap_or("").trim().to_string();
     if session_id.is_empty() {
         return Err(anyhow!("could not open a probe iTerm session"));
@@ -506,9 +527,8 @@ end tell"#
                 r#"tell application "iTerm""#,
                 r#"tell application "iTerm2""#,
             );
-            run_applescript(&fallback).map_err(|second| {
-                anyhow!("{first}; iTerm2 name also failed: {second}")
-            })
+            run_applescript(&fallback)
+                .map_err(|second| anyhow!("{first}; iTerm2 name also failed: {second}"))
         }
     }
 }
@@ -700,9 +720,8 @@ fn execute_nsapplescript(source: &str) -> Result<Option<String>> {
             return Err(anyhow!("could not build AppleScript"));
         };
         let mut error: Option<objc2::rc::Retained<NSDictionary<NSString, AnyObject>>> = None;
-        let descriptor: Option<objc2::rc::Retained<NSAppleEventDescriptor>> = unsafe {
-            msg_send![&script, executeAndReturnError: Some(&mut error)]
-        };
+        let descriptor: Option<objc2::rc::Retained<NSAppleEventDescriptor>> =
+            unsafe { msg_send![&script, executeAndReturnError: Some(&mut error)] };
         if let Some(error) = error {
             return Err(anyhow!("{}", applescript_error_message(&error)));
         }
@@ -802,14 +821,21 @@ fn cf_string_to_rust(value: CFStringRef) -> Option<String> {
         if ok == 0 {
             return None;
         }
-        let bytes = buffer.iter().map(|b| *b as u8).take_while(|b| *b != 0).collect::<Vec<_>>();
+        let bytes = buffer
+            .iter()
+            .map(|b| *b as u8)
+            .take_while(|b| *b != 0)
+            .collect::<Vec<_>>();
         String::from_utf8(bytes).ok()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{applescript_literal, bundle_looks_like_iterm, name_looks_like_iterm};
+    use super::{
+        applescript_literal, bundle_looks_like_chatgpt, bundle_looks_like_iterm,
+        bundle_looks_like_messages, name_looks_like_iterm,
+    };
 
     #[test]
     fn recognises_iterm_process_names() {
@@ -824,6 +850,19 @@ mod tests {
     #[test]
     fn quotes_applescript_text() {
         assert_eq!(applescript_literal(r#"say "hi""#), r#""say \"hi\"""#);
+    }
+
+    #[test]
+    fn recognises_the_mac_messages_app() {
+        assert!(bundle_looks_like_messages("com.apple.MobileSMS"));
+        assert!(bundle_looks_like_messages("com.apple.iChat"));
+        assert!(!bundle_looks_like_messages("com.googlecode.iterm2"));
+    }
+
+    #[test]
+    fn recognises_the_chatgpt_app() {
+        assert!(bundle_looks_like_chatgpt("com.openai.codex"));
+        assert!(!bundle_looks_like_chatgpt("com.annix.rustle"));
     }
 
     #[test]

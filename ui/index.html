@@ -11,6 +11,7 @@
         <div class="brand">
           <h1>Rustle</h1>
           <span id="app-version" class="app-version"></span>
+          <button id="check-updates" class="version-check desktop-only" type="button">Check for updates</button>
         </div>
         <span id="status-pill" class="status-pill status-idle">Idle</span>
       </header>
@@ -149,7 +150,7 @@
               <button id="clear-history" class="link-button" type="button">Clear</button>
             </div>
           </div>
-          <p class="field-hint">Double-click a word to set a replacement.</p>
+          <p class="field-hint">Select several words, or double-click one, to set a replacement.</p>
           <p class="field-hint" id="history-file-note"></p>
           <div id="history-list" class="history"></div>
         </section>
@@ -196,7 +197,7 @@
         <p class="word-replace-label">
           Replace <span id="word-replace-from" class="word-replace-from"></span> with
         </p>
-        <input id="word-replace-to" type="text" autocomplete="off" />
+        <input id="word-replace-to" type="text" autocomplete="off" autocapitalize="off" />
         <div class="word-replace-actions">
           <button id="word-replace-cancel" class="secondary" type="button">Cancel</button>
           <button id="word-replace-save" class="primary" type="button">Save</button>

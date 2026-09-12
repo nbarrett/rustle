@@ -105,8 +105,13 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) 340px;
     gap: 56px;
-    align-items: start;
+    align-items: stretch;
     padding: 48px 0 24px;
+  }
+  .hero-copy {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
   @media (max-width: 840px) {
     .hero { grid-template-columns: 1fr; gap: 36px; padding-top: 28px; }
@@ -264,7 +269,46 @@
     margin: 16px 0 0;
     color: var(--muted);
     font-size: 14px;
-    max-width: 62ch;
+  }
+
+  .tryout-heading {
+    margin: 26px 0 0;
+  }
+  .tryout-lede {
+    margin: 10px 0 0;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .tryout {
+    display: flex;
+    flex: 1;
+    min-height: 400px;
+    margin-top: 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .tryout-start {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 14px;
+    padding: 22px;
+  }
+  .tryout-start p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .tryout iframe {
+    display: block;
+    flex: 1;
+    width: 100%;
+    border: 0;
   }
   code {
     font-family: var(--mono);
@@ -318,7 +362,7 @@
   </nav>
 
   <div class="hero">
-    <div>
+    <div class="hero-copy">
       <h1>On-device dictation for the app you are already in.</h1>
       <p class="lede">Hold a key, speak, release. Whisper transcribes on this computer. The words appear in the front app, not in a website.</p>
       <div class="actions">
@@ -332,6 +376,18 @@
       <p class="missing" id="missing" hidden>
         A build for this computer is not on the latest release yet. Choose another platform below, or run from source.
       </p>
+      <h2 class="tryout-heading">Or try it here, nothing to install</h2>
+      <p class="tryout-lede">
+        One way to run Rustle, and the one that needs nothing from your IT department. It runs in
+        this page and asks only for the microphone, so it works on a locked-down work laptop. The
+        apps above are the fuller thing: a global hotkey, typing straight into whatever you are in.
+      </p>
+      <div class="tryout" id="tryout">
+        <div class="tryout-start" id="tryout-start">
+          <button class="btn btn-primary" id="tryout-launch" type="button">Start the browser version</button>
+          <p>Loads a speech model on first use, then keeps it in your browser cache. Nothing you say is uploaded.</p>
+        </div>
+      </div>
     </div>
     <div class="hero-visual">
       <img src="settings.jpg" width="720" height="2002" alt="Rustle settings: live transcript, Globe push-to-talk key, microphone, Whisper model and word corrections.">
@@ -382,6 +438,16 @@ npx tauri dev</pre>
     </span>
   </footer>
 </div>
+<script>
+  document.getElementById('tryout-launch').addEventListener('click', function () {
+    var host = document.getElementById('tryout');
+    var frame = document.createElement('iframe');
+    frame.src = './app/index.html';
+    frame.title = 'Rustle in the browser';
+    frame.allow = 'microphone';
+    host.replaceChild(frame, document.getElementById('tryout-start'));
+  });
+</script>
 <script>
   const OWNER = "nbarrett";
   const REPO = "rustle";

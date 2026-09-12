@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en-GB" data-os="web">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rustle</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app web-app">
+      <header class="masthead">
+        <div class="brand">
+          <h1>Rustle</h1>
+          <span class="app-version">Web</span>
+        </div>
+        <span id="status-pill" class="status-pill status-idle">Idle</span>
+      </header>
+      <nav class="tabs">
+        <button class="tab is-active" data-tab="dictation" type="button">Dictation</button>
+        <button class="tab" data-tab="corrections" type="button">Corrections</button>
+        <button class="tab" data-tab="history" type="button">History</button>
+        <button class="tab" data-tab="general" type="button">General</button>
+      </nav>
+      <div class="body">
+        <section class="tab-panel is-active" id="panel-dictation">
+          <div class="hold-pad web-hold-pad">
+            <p class="hold-mic-caption">Hold to talk</p>
+            <button id="hold-to-talk" class="hold-mic" type="button" aria-label="Hold to talk" disabled>
+              <span class="hold-mic-ring"></span>
+              <span class="hold-mic-core">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z" />
+                </svg>
+              </span>
+            </button>
+            <p id="dictation-status" class="field-hint">Preparing speech recognition…</p>
+            <p class="field-hint">Hold the button, or hold Space while this tab is focused.</p>
+            <button id="copy-transcript" class="secondary" type="button">Copy transcript</button>
+          </div>
+          <div class="field">
+            <span class="field-label">Last transcript</span>
+            <textarea id="transcript" class="transcript" rows="3" placeholder="Your dictated text appears here and is copied automatically." spellcheck="false"></textarea>
+            <div class="inline-row">
+              <button id="clear-transcript" class="secondary" type="button">Clear</button>
+              <span id="clipboard-status" class="field-hint"></span>
+            </div>
+          </div>
+        </section>
+        <section class="tab-panel" id="panel-corrections">
+          <div class="field">
+            <span class="field-label">Word corrections</span>
+            <p class="field-hint">Fix words Whisper mishears: heard on the left, written on the right.</p>
+            <input id="corrections-search" type="search" placeholder="Search corrections" autocomplete="off" />
+            <div id="corrections-list" class="corrections-list"></div>
+            <div class="inline-row corrections-actions">
+              <button id="add-correction" class="secondary" type="button">Add correction</button>
+              <button id="export-corrections" class="secondary" type="button">Export</button>
+              <button id="import-corrections" class="secondary" type="button">Import</button>
+              <input id="corrections-file" type="file" accept=".json,application/json" hidden />
+            </div>
+            <p id="corrections-status" class="field-hint"></p>
+          </div>
+        </section>
+        <section class="tab-panel" id="panel-history">
+          <div class="block-head">
+            <span class="field-label">Dictation history</span>
+            <div class="inline-row">
+              <button id="export-history" class="link-button" type="button">Export</button>
+              <button id="import-history" class="link-button" type="button">Import</button>
+              <button id="clear-history" class="link-button" type="button">Clear</button>
+            </div>
+          </div>
+          <p class="field-hint">Select several words, or double-click one, to set a replacement.</p>
+          <p id="history-file-note" class="field-hint">Transcripts are kept in this browser and never uploaded.</p>
+          <div id="history-list" class="history"></div>
+        </section>
+        <section class="tab-panel" id="panel-general">
+          <div class="field">
+            <label class="field-label" for="model-choice">Model</label>
+            <div class="inline-row">
+              <select id="model-choice"></select>
+              <button id="load-model" class="secondary" type="button">Load model</button>
+            </div>
+            <progress id="load-progress" max="100" value="0" hidden></progress>
+            <p id="engine-status" class="field-hint">Choose a model and load it to begin.</p>
+          </div>
+          <div class="field">
+            <label class="field-label" for="prefers-british">Spelling</label>
+            <label class="switch">
+              <input id="prefers-british" type="checkbox" />
+              <span class="switch-track"></span>
+              <span class="switch-caption">Use British spellings</span>
+            </label>
+          </div>
+          <div class="setup-banner">
+            <p class="field-label">Browser edition</p>
+            <p class="field-hint">Speech stays in this tab. Switch back to your other app and paste the copied transcript.</p>
+          </div>
+        </section>
+      </div>
+      <div class="actions">
+        <span id="save-note" class="save-note"></span>
+        <button id="save-settings" class="primary" type="button">Save settings</button>
+      </div>
+    </main>
+    <div id="word-replace" class="word-replace" hidden>
+      <div class="word-replace-card">
+        <p class="word-replace-label">Replace <span id="word-replace-from" class="word-replace-from"></span> with</p>
+        <input id="word-replace-to" type="text" autocomplete="off" autocapitalize="off" />
+        <div class="word-replace-actions">
+          <button id="word-replace-cancel" class="secondary" type="button">Cancel</button>
+          <button id="word-replace-save" class="primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

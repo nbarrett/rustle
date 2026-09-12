@@ -22,6 +22,39 @@ Rustle runs as a **tray / menu-bar app** on macOS, Windows, and Linux, with a sm
 
 On a Mac, live words can appear as you speak. On Windows and Linux, the grey HUD still updates live, then the finished transcript is pasted on release (Ctrl+V). Linux paste needs `xdotool` (X11), `wtype`, or `ydotool`. Wayland global hotkeys are limited; X11 is the path that actually works today.
 
+## Locked-down machines: Rustle in the browser
+
+If you cannot install software and cannot grant permissions, use
+[Rustle in the browser](web/README.md) at **https://nbarrett.github.io/rustle/**.
+Press **Start the browser version** on that page and it runs there, with nothing to
+install. It is one way to run Rustle rather than a replacement for the desktop apps.
+
+The desktop app needs macOS Accessibility and Input Monitoring. Those live in a
+system-wide database protected by System Integrity Protection, only an administrator
+can unlock them, and there is no per-user equivalent. On a managed work machine you
+will not be given them.
+
+The browser target needs none of it. The machine using it needs a browser and a URL:
+no Homebrew, no Node, no Rust, no command line tools, no admin password, no Jamf
+package, nothing in Privacy and Security. Speech is still transcribed on the machine,
+audio never leaves the tab, and transcript history stays in that browser's local storage.
+
+What you give up is the global hotkey and typing into the focused app. You switch to
+the tab, hold a key, speak, and press Cmd+V where you want the text. Corrections,
+spoken punctuation and British spellings are applied by the same Rust code as the
+desktop app, compiled to WebAssembly, so the two cannot behave differently.
+
+Build it on a machine you control, with everything installing into your home
+directory:
+
+```bash
+pnpm install && pnpm run web:build
+```
+
+That writes a static site to `dist-web/` which you host anywhere over HTTPS. Full
+instructions, including toolchain setup without admin rights or Homebrew, are in
+[web/README.md](web/README.md).
+
 ## Prerequisites
 
 - **Rust** via [rustup](https://rustup.rs)

@@ -116,6 +116,7 @@ const elements = {
   updateBanner: requiredElement<HTMLDivElement>("update-banner"),
   updateNote: requiredElement<HTMLParagraphElement>("update-note"),
   installUpdate: requiredElement<HTMLButtonElement>("install-update"),
+  checkUpdates: requiredElement<HTMLButtonElement>("check-updates"),
   wordReplace: requiredElement<HTMLDivElement>("word-replace"),
   wordReplaceFrom: requiredElement<HTMLSpanElement>("word-replace-from"),
   wordReplaceTo: requiredElement<HTMLInputElement>("word-replace-to"),
@@ -174,9 +175,32 @@ function renderHistory(): void {
     const text = document.createElement("span");
     text.className = "history-text";
     appendHistoryWords(text, entry.text, entryIndex);
+    text.addEventListener("mouseup", () => {
+      const spoken = selectedPhraseInside(text);
+      if (spoken === null || !spoken.includes(" ")) {
+        return;
+      }
+      openWordReplacement(entryIndex, spoken);
+    });
     item.append(time, text);
     elements.historyList.appendChild(item);
   });
+}
+
+function selectedPhraseInside(container: HTMLElement): string | null {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+    return null;
+  }
+  const range = selection.getRangeAt(0);
+  if (!container.contains(range.commonAncestorContainer)) {
+    return null;
+  }
+  const spoken = selection.toString().replace(/\s+/g, " ").trim();
+  if (spoken === "") {
+    return null;
+  }
+  return spoken;
 }
 
 function appendHistoryWords(
@@ -206,6 +230,7 @@ function appendHistoryWords(
 }
 
 function openWordReplacement(entryIndex: number, spoken: string): void {
+  window.getSelection()?.removeAllRanges();
   wordReplaceEntryIndex = entryIndex;
   wordReplaceSpoken = spoken;
   elements.wordReplaceFrom.textContent = spoken;
@@ -226,8 +251,31 @@ function closeWordReplacement(): void {
 }
 
 function replaceWordInText(text: string, spoken: string, written: string): string {
-  const escaped = spoken.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return text.replace(new RegExp(escaped, "gi"), written);
+  if (spoken === "") {
+    return text;
+  }
+  const lowerText = text.toLocaleLowerCase();
+  const lowerSpoken = spoken.toLocaleLowerCase();
+  let result = "";
+  let index = 0;
+  while (index < text.length) {
+    const found = lowerText.indexOf(lowerSpoken, index);
+    if (found === -1) {
+      result += text.slice(index);
+      break;
+    }
+    const end = found + spoken.length;
+    const preceded = found > 0 && isCorrectionWordCharacter(text.charAt(found - 1));
+    const followed = end < text.length && isCorrectionWordCharacter(text.charAt(end));
+    result += text.slice(index, found);
+    result += preceded || followed ? text.slice(found, end) : written;
+    index = end;
+  }
+  return result;
+}
+
+function isCorrectionWordCharacter(character: string): boolean {
+  return /[A-Za-z0-9]/.test(character);
 }
 
 async function persistCorrections(): Promise<void> {
@@ -963,22 +1011,50 @@ function applyPlatformCopy(): void {
       : "Hold to talk, release to type into the focused app.";
 }
 
-async function checkForAvailableUpdate(): Promise<void> {
+function restoreCheckUpdatesLabelSoon(): void {
+  window.setTimeout(() => {
+    elements.checkUpdates.disabled = false;
+    elements.checkUpdates.textContent = "Check for updates";
+  }, 4000);
+}
+
+function showGeneralTab(): void {
+  document.querySelector<HTMLButtonElement>('[data-tab="general"]')?.click();
+}
+
+async function checkForAvailableUpdate(startedByTheUser: boolean): Promise<void> {
+  elements.checkUpdates.disabled = true;
+  if (startedByTheUser) {
+    elements.checkUpdates.textContent = "Checking…";
+  }
+  let checkFailed = false;
   try {
     pendingUpdate = await checkForAppUpdate();
   } catch {
     pendingUpdate = null;
+    checkFailed = true;
   }
   if (!pendingUpdate) {
     elements.updateBanner.hidden = true;
+    if (startedByTheUser) {
+      elements.checkUpdates.textContent = checkFailed ? "Check failed" : "Up to date";
+      restoreCheckUpdatesLabelSoon();
+    } else {
+      elements.checkUpdates.disabled = false;
+    }
     fitWindowToContent();
     return;
   }
+  elements.checkUpdates.textContent = `Update to ${pendingUpdate.version}`;
+  elements.checkUpdates.disabled = false;
   elements.updateNote.textContent = `Version ${pendingUpdate.version} is available.`;
   elements.installUpdate.hidden = false;
   elements.installUpdate.disabled = false;
   elements.installUpdate.textContent = "Install update";
   elements.updateBanner.hidden = false;
+  if (startedByTheUser) {
+    showGeneralTab();
+  }
   fitWindowToContent();
 }
 
@@ -1123,7 +1199,14 @@ async function initialise(): Promise<void> {
   elements.installUpdate.addEventListener("click", () => {
     void installAvailableUpdate();
   });
-  void checkForAvailableUpdate();
+  elements.checkUpdates.addEventListener("click", () => {
+    if (pendingUpdate) {
+      showGeneralTab();
+      return;
+    }
+    void checkForAvailableUpdate(true);
+  });
+  void checkForAvailableUpdate(false);
 
   await listenForDictationStatus(applyStatusEvent);
   await listenForModelDownloadProgress((progress) => {

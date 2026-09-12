@@ -1,5 +1,9 @@
-use anyhow::{anyhow, Result};
+#[cfg(feature = "files")]
+use anyhow::anyhow;
+#[cfg(feature = "files")]
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "files")]
 use std::path::PathBuf;
 
 use crate::hotkey::HotkeyChoice;
@@ -28,7 +32,7 @@ fn silence_other_audio_while_holding_by_default() -> bool {
     true
 }
 
-fn default_corrections() -> Vec<Correction> {
+pub fn default_corrections() -> Vec<Correction> {
     vec![
         Correction {
             spoken: "whisper flow".to_string(),
@@ -123,19 +127,23 @@ fn replace_ascii_case_insensitive(haystack: &str, from: &str, to: &str) -> Strin
     result
 }
 
+#[cfg(feature = "files")]
 pub fn rustle_directory() -> Result<PathBuf> {
     let base = dirs::config_dir().ok_or_else(|| anyhow!("could not locate a config directory"))?;
     Ok(base.join("rustle"))
 }
 
+#[cfg(feature = "files")]
 pub fn config_file_path() -> Result<PathBuf> {
     Ok(rustle_directory()?.join("config.json"))
 }
 
+#[cfg(feature = "files")]
 pub fn models_directory() -> Result<PathBuf> {
     Ok(rustle_directory()?.join("models"))
 }
 
+#[cfg(feature = "files")]
 pub fn load_config() -> Result<Config> {
     let path = config_file_path()?;
     if !path.exists() {
@@ -145,6 +153,7 @@ pub fn load_config() -> Result<Config> {
     Ok(serde_json::from_str(&text)?)
 }
 
+#[cfg(feature = "files")]
 pub fn save_config(config: &Config) -> Result<()> {
     let directory = rustle_directory()?;
     std::fs::create_dir_all(&directory)?;
@@ -153,6 +162,7 @@ pub fn save_config(config: &Config) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "files")]
 pub fn resolve_model_path(model_file_name: &str) -> Result<PathBuf> {
     let candidate = PathBuf::from(model_file_name);
     if candidate.is_absolute() {
@@ -169,6 +179,7 @@ pub fn resolve_model_path(model_file_name: &str) -> Result<PathBuf> {
     Ok(in_data_directory)
 }
 
+#[cfg(feature = "files")]
 #[derive(Clone, Debug, Serialize)]
 pub struct ModelChoice {
     pub label: String,
@@ -178,6 +189,7 @@ pub struct ModelChoice {
     pub installed: bool,
 }
 
+#[cfg(feature = "files")]
 pub fn model_catalog() -> Vec<ModelChoice> {
     ["base.en", "small.en", "medium.en", "large-v3"]
         .into_iter()
@@ -199,6 +211,7 @@ pub fn model_catalog() -> Vec<ModelChoice> {
         .collect()
 }
 
+#[cfg(feature = "files")]
 fn approximate_download_size(model_name: &str) -> &'static str {
     match model_name {
         "base.en" => "~150 MB",
@@ -232,7 +245,10 @@ mod tests {
     #[test]
     fn does_not_replace_get_inside_getting() {
         let rules = [rule("Get", "Git")];
-        assert_eq!(apply_corrections("getting started", &rules), "getting started");
+        assert_eq!(
+            apply_corrections("getting started", &rules),
+            "getting started"
+        );
     }
 
     #[test]
@@ -270,7 +286,10 @@ mod tests {
     fn left_packet_becomes_an_opening_bracket() {
         let rules = [rule("left packet", "("), rule("right packet", ")")];
         assert_eq!(
-            apply_corrections("I'm just testing now left packet, 87 closed packet.", &rules),
+            apply_corrections(
+                "I'm just testing now left packet, 87 closed packet.",
+                &rules
+            ),
             "I'm just testing now (87)."
         );
     }

@@ -71,8 +71,49 @@ jobs:
       - name: Run unit tests
         run: cargo test -p rustle-core --lib
 
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS tools
+        run: pnpm install --frozen-lockfile
+
+      - name: Build browser app
+        run: pnpm web:build
+
+      - name: Keep the browser app for the pages deploy
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-app
+          path: dist-web
+          retention-days: 1
+
   build-and-release:
-    needs: test
+    needs: [test, web]
     if: >-
       github.ref_type == 'tag' ||
       (github.event_name == 'workflow_dispatch' && inputs.publish)
@@ -368,6 +409,7 @@ jobs:
           gh release upload "${RELEASE_TAG}" latest.json --clobber --repo "${GITHUB_REPOSITORY}"
 
   pages:
+    needs: web
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -380,6 +422,11 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v5
+      - name: Collect the browser app
+        uses: actions/download-artifact@v4
+        with:
+          name: browser-app
+          path: docs/app
       - name: Upload download page
         uses: actions/upload-pages-artifact@v3
         with:
