@@ -97,3 +97,42 @@ body {
     border-radius: 0;
   }
 }
+
+html[data-embedded] {
+  height: auto;
+}
+
+html[data-embedded] body {
+  display: block;
+  height: auto;
+  overflow: visible;
+  padding: 0;
+}
+
+html[data-embedded] .web-app {
+  width: 100%;
+  flex: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-embedded] .web-app > .body {
+  flex: none;
+  overflow: visible;
+}
+
+html[data-embedded] .web-app .tab-panel.is-active {
+  min-height: 0;
+}
+
+html[data-embedded] #transcript {
+  flex: none;
+  max-height: none;
+}
+
+html[data-embedded] #corrections-list,
+html[data-embedded] #history-list {
+  flex: none;
+  max-height: 340px;
+}
