@@ -68,6 +68,9 @@ jobs:
       - name: Typecheck UI
         run: pnpm typecheck
 
+      - name: Check the release build compiles
+        run: cargo check --workspace
+
       - name: Run unit tests
         run: cargo test -p rustle-core --lib
 

@@ -556,8 +556,6 @@ fn live_transcript_should_be_typed(text: &str) -> bool {
     !text.trim().is_empty() && !transcript_is_a_whisper_blank_phrase(text)
 }
 
-#[cfg(any(test, target_os = "macos"))]
-
 fn dictation_starts_inside_an_open_sentence(
     #[cfg(target_os = "macos")] insert_target: Option<&crate::mac_paste::FrontApp>,
 ) -> bool {
