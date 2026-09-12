@@ -12,7 +12,8 @@
     "web:wasm": "wasm-pack build web/wasm --target web --out-dir pkg --release",
     "web:dev": "pnpm run web:wasm && vite --config vite.web.config.ts",
     "web:build": "pnpm run web:wasm && vite build --config vite.web.config.ts",
-    "web:preview": "vite preview --config vite.web.config.ts"
+    "web:preview": "vite preview --config vite.web.config.ts",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

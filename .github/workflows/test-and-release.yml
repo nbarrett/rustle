@@ -105,6 +105,9 @@ jobs:
       - name: Build browser app
         run: pnpm web:build
 
+      - name: Typecheck browser app
+        run: pnpm typecheck:web
+
       - name: Keep the browser app for the pages deploy
         uses: actions/upload-artifact@v4
         with:

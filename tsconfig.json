@@ -22,8 +22,6 @@
   },
   "include": [
     "ui/src/**/*.ts",
-    "web/app/**/*.ts",
-    "vite.config.ts",
-    "vite.web.config.ts"
+    "vite.config.ts"
   ]
 }
