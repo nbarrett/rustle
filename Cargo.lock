@@ -3367,7 +3367,7 @@ dependencies = [
 
 [[package]]
 name = "rustle-app"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "dispatch2",
  "objc2",
@@ -3387,7 +3387,7 @@ dependencies = [
 
 [[package]]
 name = "rustle-core"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "arboard",
@@ -3408,7 +3408,7 @@ dependencies = [
 
 [[package]]
 name = "rustle-web-core"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "rustle-core",
  "serde",

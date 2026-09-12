@@ -1,6 +1,6 @@
 [package]
 name = "rustle-web-core"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2021"
 license = "MIT"
 description = "Browser bindings for the Rustle correction engine, so the web target and the desktop app share one implementation."
