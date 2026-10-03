@@ -9,6 +9,11 @@ const AMERICAN_TO_BRITISH: &[(&str, &str)] = &[
     ("behaviors", "behaviours"),
     ("behavioral", "behavioural"),
     ("caliber", "calibre"),
+    ("capitalize", "capitalise"),
+    ("capitalized", "capitalised"),
+    ("capitalizes", "capitalises"),
+    ("capitalizing", "capitalising"),
+    ("capitalization", "capitalisation"),
     ("canceled", "cancelled"),
     ("canceling", "cancelling"),
     ("catalog", "catalogue"),
@@ -231,5 +236,13 @@ mod tests {
     #[test]
     fn matches_title_case() {
         assert_eq!(spelling_with_source_case("Color", "colour"), "Colour");
+    }
+
+    #[test]
+    fn capitalisation_uses_british_spelling_and_preserves_case() {
+        assert_eq!(
+            apply_uk_spellings("Capitalized capitalization CAPITALIZE capitalizing"),
+            "Capitalised capitalisation CAPITALISE capitalising"
+        );
     }
 }

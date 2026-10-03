@@ -4,6 +4,26 @@ use std::ffi::c_void;
 use std::ptr;
 use std::sync::{Mutex, OnceLock};
 
+use crate::hud_placement::ScreenRectangle;
+
+#[repr(C)]
+struct AccessibilityPoint {
+    x: f64,
+    y: f64,
+}
+
+#[repr(C)]
+struct AccessibilityRectangle {
+    origin: AccessibilityPoint,
+    size: AccessibilitySize,
+}
+
+#[repr(C)]
+struct AccessibilitySize {
+    width: f64,
+    height: f64,
+}
+
 type CFTypeRef = *const c_void;
 type CFStringRef = *const c_void;
 type AXUIElementRef = *mut c_void;
@@ -12,6 +32,7 @@ type AXValueRef = *mut c_void;
 const AX_ERROR_SUCCESS: i32 = 0;
 const AX_ERROR_API_DISABLED: i32 = -25211;
 const AX_VALUE_CF_RANGE: u32 = 4;
+const AX_VALUE_CG_RECT: u32 = 3;
 const CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
 
 #[repr(C)]
@@ -50,6 +71,12 @@ extern "C" {
     fn AXUIElementCopyAttributeValue(
         element: AXUIElementRef,
         attribute: CFStringRef,
+        value: *mut CFTypeRef,
+    ) -> i32;
+    fn AXUIElementCopyParameterizedAttributeValue(
+        element: AXUIElementRef,
+        attribute: CFStringRef,
+        parameter: CFTypeRef,
         value: *mut CFTypeRef,
     ) -> i32;
     fn AXUIElementSetAttributeValue(
@@ -124,31 +151,201 @@ pub fn replace_in_target_field(
 ) -> Result<i64> {
     unsafe {
         let focused = copy_focused_ui_element(target_pid)?;
-        let previous_len = utf16_len(previous);
-        let origin = match origin_utf16 {
-            Some(origin) => origin,
-            None => selection_location(focused as AXUIElementRef)?,
-        };
-
-        if previous_len > 0 {
-            set_selected_range(focused as AXUIElementRef, origin, previous_len)?;
-        }
-        set_selected_text(focused as AXUIElementRef, current)?;
+        let result = (|| {
+            let previous_len = utf16_len(previous);
+            let origin = match origin_utf16 {
+                Some(origin) => origin,
+                None => selection_location(focused as AXUIElementRef)?,
+            };
+            if previous_len > 0 {
+                set_selected_range(focused as AXUIElementRef, origin, previous_len)?;
+            }
+            set_selected_text(focused as AXUIElementRef, current)?;
+            Ok(origin)
+        })();
         CFRelease(focused);
-        Ok(origin)
+        result
     }
 }
 
 pub fn text_before_the_caret_in_the_target_field(target_pid: Option<i32>) -> Result<String> {
+    Ok(insert_context_for_the_target_field(target_pid)?.text_before_caret)
+}
+
+pub struct FocusedFieldInsertContext {
+    pub text_before_caret: String,
+    pub text_after_caret: String,
+    pub is_a_single_line_field: bool,
+}
+
+pub fn insert_context_for_the_target_field(
+    target_pid: Option<i32>,
+) -> Result<FocusedFieldInsertContext> {
     unsafe {
         let focused = copy_focused_ui_element(target_pid)?;
         let caret = copy_selected_range(focused as AXUIElementRef);
         let field_text = copy_string_attribute(focused as AXUIElementRef, "AXValue");
+        let role = copy_string_attribute(focused as AXUIElementRef, "AXRole").unwrap_or_default();
         CFRelease(focused);
-        let caret_location = caret?.location.max(0) as usize;
-        let prefix_utf16: Vec<u16> = field_text?.encode_utf16().take(caret_location).collect();
-        Ok(String::from_utf16_lossy(&prefix_utf16))
+        let range = caret?;
+        let (prefix, suffix) =
+            split_field_around_utf16_selection(&field_text?, range.location, range.length)?;
+        let is_a_single_line_field = matches!(
+            role.as_str(),
+            "AXTextField" | "AXComboBox" | "AXSearchField"
+        );
+        Ok(FocusedFieldInsertContext {
+            text_before_caret: prefix,
+            text_after_caret: suffix,
+            is_a_single_line_field,
+        })
     }
+}
+
+pub fn focused_caret_bounds_in_screen_coordinates() -> Result<ScreenRectangle> {
+    unsafe {
+        let focused = copy_focused_ui_element(None)?;
+        let result = (|| {
+            let selection = copy_selected_range(focused as AXUIElementRef)?;
+            let caret = CFRange {
+                location: selection.location,
+                length: 0,
+            };
+            let parameter =
+                AXValueCreate(AX_VALUE_CF_RANGE, &caret as *const CFRange as *const c_void);
+            if parameter.is_null() {
+                return Err(anyhow!("could not create caret range"));
+            }
+            let attribute = cf_string("AXBoundsForRange");
+            let mut value: CFTypeRef = ptr::null();
+            let status = AXUIElementCopyParameterizedAttributeValue(
+                focused as AXUIElementRef,
+                attribute,
+                parameter as CFTypeRef,
+                &mut value,
+            );
+            CFRelease(attribute);
+            CFRelease(parameter as CFTypeRef);
+            if status != AX_ERROR_SUCCESS || value.is_null() {
+                return Err(anyhow!("could not read caret bounds (AX {status})"));
+            }
+            let mut rect = AccessibilityRectangle {
+                origin: AccessibilityPoint { x: 0.0, y: 0.0 },
+                size: AccessibilitySize {
+                    width: 0.0,
+                    height: 0.0,
+                },
+            };
+            let read = AXValueGetValue(
+                value as AXValueRef,
+                AX_VALUE_CG_RECT,
+                &mut rect as *mut AccessibilityRectangle as *mut c_void,
+            );
+            CFRelease(value);
+            if !read
+                || !rect.origin.x.is_finite()
+                || !rect.origin.y.is_finite()
+                || !rect.size.width.is_finite()
+                || !rect.size.height.is_finite()
+                || rect.size.height <= 0.0
+                || rect.size.width < 0.0
+            {
+                return Err(anyhow!("caret bounds were invalid"));
+            }
+            Ok(ScreenRectangle {
+                x: rect.origin.x,
+                y: rect.origin.y,
+                width: rect.size.width.max(1.0),
+                height: rect.size.height,
+            })
+        })();
+        CFRelease(focused);
+        result
+    }
+}
+
+pub fn focused_field_bounds_in_screen_coordinates() -> Result<ScreenRectangle> {
+    unsafe {
+        let focused = copy_focused_ui_element(None)?;
+        let result = (|| {
+            let mut position = AccessibilityPoint { x: 0.0, y: 0.0 };
+            let mut size = AccessibilitySize {
+                width: 0.0,
+                height: 0.0,
+            };
+            copy_accessibility_geometry(
+                focused as AXUIElementRef,
+                "AXPosition",
+                1,
+                &mut position as *mut AccessibilityPoint as *mut c_void,
+            )?;
+            copy_accessibility_geometry(
+                focused as AXUIElementRef,
+                "AXSize",
+                2,
+                &mut size as *mut AccessibilitySize as *mut c_void,
+            )?;
+            if !position.x.is_finite()
+                || !position.y.is_finite()
+                || !size.width.is_finite()
+                || !size.height.is_finite()
+                || size.width <= 0.0
+                || size.height <= 0.0
+            {
+                return Err(anyhow!("focused field bounds were invalid"));
+            }
+            Ok(ScreenRectangle {
+                x: position.x,
+                y: position.y,
+                width: size.width,
+                height: size.height,
+            })
+        })();
+        CFRelease(focused);
+        result
+    }
+}
+
+unsafe fn copy_accessibility_geometry(
+    element: AXUIElementRef,
+    attribute_name: &str,
+    value_type: u32,
+    output: *mut c_void,
+) -> Result<()> {
+    let attribute = cf_string(attribute_name);
+    let mut value: CFTypeRef = ptr::null();
+    let status = AXUIElementCopyAttributeValue(element, attribute, &mut value);
+    CFRelease(attribute);
+    if status != AX_ERROR_SUCCESS || value.is_null() {
+        return Err(anyhow!("could not read {attribute_name} (AX {status})"));
+    }
+    let read = AXValueGetValue(value as AXValueRef, value_type, output);
+    CFRelease(value);
+    if !read {
+        return Err(anyhow!("{attribute_name} did not contain geometry"));
+    }
+    Ok(())
+}
+
+fn split_field_around_utf16_selection(
+    text: &str,
+    location: isize,
+    length: isize,
+) -> Result<(String, String)> {
+    let location = usize::try_from(location).map_err(|_| anyhow!("negative caret location"))?;
+    let length = usize::try_from(length).map_err(|_| anyhow!("negative selection length"))?;
+    let end = location
+        .checked_add(length)
+        .ok_or_else(|| anyhow!("selection range overflowed"))?;
+    let encoded: Vec<u16> = text.encode_utf16().collect();
+    if end > encoded.len() {
+        return Err(anyhow!("caret range exceeded the focused field"));
+    }
+    let prefix = String::from_utf16(&encoded[..location])
+        .map_err(|_| anyhow!("caret split a Unicode character"))?;
+    let suffix = String::from_utf16(&encoded[end..])
+        .map_err(|_| anyhow!("selection split a Unicode character"))?;
+    Ok((prefix, suffix))
 }
 
 fn apps_asked_to_build_an_accessibility_tree() -> &'static Mutex<HashMap<i32, bool>> {
@@ -325,5 +522,34 @@ fn cf_string(text: &str) -> CFStringRef {
             CF_STRING_ENCODING_UTF8,
             0,
         )
+    }
+}
+
+#[cfg(test)]
+mod insertion_context_tests {
+    use super::split_field_around_utf16_selection;
+
+    #[test]
+    fn selected_text_is_excluded_from_insertion_context() {
+        assert_eq!(
+            split_field_around_utf16_selection("Please remove this today", 7, 11).unwrap(),
+            ("Please ".to_string(), " today".to_string())
+        );
+    }
+
+    #[test]
+    fn caret_ranges_use_utf16_without_splitting_unicode_characters() {
+        assert_eq!(
+            split_field_around_utf16_selection("Hi 🦀 there", 5, 0).unwrap(),
+            ("Hi 🦀".to_string(), " there".to_string())
+        );
+        assert!(split_field_around_utf16_selection("Hi 🦀 there", 4, 0).is_err());
+    }
+
+    #[test]
+    fn invalid_caret_ranges_do_not_look_like_the_end_of_the_field() {
+        for (location, length) in [(-1, 0), (0, -1), (5, 0), (3, 2), (isize::MAX, isize::MAX)] {
+            assert!(split_field_around_utf16_selection("text", location, length).is_err());
+        }
     }
 }

@@ -3,8 +3,8 @@ use anyhow::{anyhow, Result};
 use crate::transcript::is_nonspeech_annotation;
 pub use crate::transcript::{
     final_pass_only_extends_the_spoken_words, final_pass_threw_away_the_spoken_words,
-    transcript_is_a_whisper_blank_phrase, transcript_is_only_thank_you,
-    without_a_trailing_whisper_thank_you,
+    transcript_is_a_whisper_blank_phrase, transcript_is_only_a_whisper_outro,
+    transcript_is_only_thanks, without_trailing_whisper_outros,
 };
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 

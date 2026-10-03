@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 pub const WHISPER_SAMPLE_RATE: u32 = 16_000;
 const SPEECH_RMS_MINIMUM: f32 = 0.012;
 const SPEECH_PEAK_MINIMUM: f32 = 0.04;
-const QUIET_EDGE_PAD_SAMPLES: usize = WHISPER_SAMPLE_RATE as usize / 5;
+const TRAILING_SPEECH_PEAK_MINIMUM: f32 = 0.01;
 
 pub struct ActiveRecording {
     _keep_capturing: CaptureSession,
@@ -258,24 +258,29 @@ pub fn clip_has_a_speech_peak(samples: &[f32]) -> bool {
         .any(|sample| sample.abs() >= SPEECH_PEAK_MINIMUM)
 }
 
-pub fn trim_quiet_edges(samples: &[f32]) -> &[f32] {
-    let Some(first) = samples
+pub fn clip_has_sustained_speech(samples: &[f32], sample_rate: u32) -> bool {
+    let minimum_spoken_samples = (sample_rate as usize) / 2;
+    samples
         .iter()
-        .position(|sample| sample.abs() >= SPEECH_PEAK_MINIMUM)
-    else {
-        return samples;
-    };
+        .filter(|sample| sample.abs() >= SPEECH_PEAK_MINIMUM)
+        .count()
+        >= minimum_spoken_samples
+}
+
+pub fn trim_quiet_edges(samples: &[f32]) -> &[f32] {
+    trim_trailing_silence(samples, WHISPER_SAMPLE_RATE)
+}
+
+pub fn trim_trailing_silence(samples: &[f32], sample_rate: u32) -> &[f32] {
+    let pad = sample_rate as usize;
     let Some(last) = samples
         .iter()
-        .rposition(|sample| sample.abs() >= SPEECH_PEAK_MINIMUM)
+        .rposition(|sample| sample.abs() >= TRAILING_SPEECH_PEAK_MINIMUM)
     else {
         return samples;
     };
-    let start = first.saturating_sub(QUIET_EDGE_PAD_SAMPLES);
-    let end = (last + 1)
-        .saturating_add(QUIET_EDGE_PAD_SAMPLES)
-        .min(samples.len());
-    &samples[start..end]
+    let end = (last + 1).saturating_add(pad).min(samples.len());
+    &samples[..end]
 }
 
 pub fn downmix_to_mono(interleaved_samples: &[f32], channels: u16) -> Vec<f32> {
@@ -312,7 +317,7 @@ pub fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> 
 mod tests {
     use super::{
         clip_has_a_speech_peak, clip_is_quieter_than_speech, root_mean_square_amplitude,
-        trim_quiet_edges,
+        trim_quiet_edges, trim_trailing_silence, WHISPER_SAMPLE_RATE,
     };
 
     #[test]
@@ -334,14 +339,27 @@ mod tests {
 
     #[test]
     fn trim_quiet_edges_keeps_the_last_spoken_peak() {
-        let mut clip = vec![0.0f32; 16000];
+        let mut clip = vec![0.0f32; WHISPER_SAMPLE_RATE as usize * 4];
         for sample in &mut clip[2000..2600] {
             *sample = 0.2;
         }
         let trimmed = trim_quiet_edges(&clip);
         assert!(trimmed.len() < clip.len());
         assert!(trimmed.iter().any(|sample| *sample == 0.2));
+        assert_eq!(trimmed[0], 0.0);
         assert_eq!(trimmed[trimmed.len() - 1], 0.0);
+    }
+
+    #[test]
+    fn trailing_silence_trim_keeps_the_start_of_the_clip() {
+        let mut clip = vec![0.0f32; WHISPER_SAMPLE_RATE as usize * 3];
+        for sample in &mut clip[1000..1600] {
+            *sample = 0.2;
+        }
+        let trimmed = trim_trailing_silence(&clip, WHISPER_SAMPLE_RATE);
+        assert_eq!(trimmed[0], 0.0);
+        assert!(trimmed.len() > 1600);
+        assert!(trimmed.len() < clip.len());
     }
 
     #[test]

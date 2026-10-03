@@ -27,7 +27,6 @@ const OVERLAY_VERTICAL_PADDING: f64 = 14.0;
 const OVERLAY_MAX_TEXT_WIDTH: f64 = 520.0;
 const OVERLAY_MIN_WIDTH: f64 = 220.0;
 const OVERLAY_MAX_TEXT_HEIGHT: f64 = 42.0;
-const OVERLAY_BOTTOM_MARGIN: f64 = 96.0;
 const OVERLAY_CORNER_RADIUS: f64 = 12.0;
 const OVERLAY_HIDE_DELAY: Duration = Duration::from_millis(350);
 
@@ -106,8 +105,6 @@ impl DictationOverlay {
                 return;
             };
             native.set_text(text);
-            native.panel.setAlphaValue(1.0);
-            native.panel.orderFront(None);
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -172,19 +169,74 @@ impl DictationOverlay {
 }
 
 #[cfg(target_os = "macos")]
-fn place_overlay_on_screen(panel: &NSPanel, width: f64, height: f64, mtm: MainThreadMarker) {
-    let Some(screen) = NSScreen::mainScreen(mtm) else {
-        return;
+fn place_overlay_on_screen(
+    panel: &NSPanel,
+    width: f64,
+    height: f64,
+    mtm: MainThreadMarker,
+) -> bool {
+    use rustle_core::hud_placement::{
+        place_hud_above_caret, place_hud_outside_focused_field, ScreenRectangle,
+    };
+    let screens = NSScreen::screens(mtm);
+    let Some(primary) = screens.firstObject() else {
+        return false;
+    };
+    let primary_top = primary.frame().origin.y + primary.frame().size.height;
+    let caret = rustle_core::mac_ax::focused_caret_bounds_in_screen_coordinates()
+        .ok()
+        .map(|rect| ScreenRectangle {
+            y: primary_top - rect.y - rect.height,
+            ..rect
+        });
+    let focused_field = rustle_core::mac_ax::focused_field_bounds_in_screen_coordinates()
+        .ok()
+        .map(|field| ScreenRectangle {
+            y: primary_top - field.y - field.height,
+            ..field
+        });
+    let screen = caret
+        .or(focused_field)
+        .and_then(|field| {
+            screens.iter().find(|screen| {
+                let frame = screen.frame();
+                ScreenRectangle {
+                    x: frame.origin.x,
+                    y: frame.origin.y,
+                    width: frame.size.width,
+                    height: frame.size.height,
+                }
+                .intersects(field)
+            })
+        })
+        .or_else(|| NSScreen::mainScreen(mtm));
+    let Some(screen) = screen else {
+        return false;
     };
     let visible = screen.visibleFrame();
-    let x = visible.origin.x + ((visible.size.width - width) / 2.0);
-    let min_y = visible.origin.y + 16.0;
-    let max_y = (visible.origin.y + visible.size.height - height - 16.0).max(min_y);
-    let y = (visible.origin.y + OVERLAY_BOTTOM_MARGIN).clamp(min_y, max_y);
+    let work_area = ScreenRectangle {
+        x: visible.origin.x,
+        y: visible.origin.y,
+        width: visible.size.width,
+        height: visible.size.height,
+    };
+    let position = caret
+        .and_then(|caret| place_hud_above_caret(work_area, width, height, caret))
+        .or_else(|| {
+            focused_field.and_then(|field| place_hud_above_caret(work_area, width, height, field))
+        })
+        .or_else(|| place_hud_outside_focused_field(work_area, width, height, focused_field));
+    let Some(position) = position else {
+        return false;
+    };
     panel.setFrame_display(
-        NSRect::new(NSPoint::new(x, y), NSSize::new(width, height)),
+        NSRect::new(
+            NSPoint::new(position.x, position.y),
+            NSSize::new(width, height),
+        ),
         false,
     );
+    true
 }
 
 #[cfg(target_os = "macos")]
@@ -288,10 +340,9 @@ impl NativeOverlay {
             NSPoint::new(OVERLAY_HORIZONTAL_PADDING, OVERLAY_VERTICAL_PADDING),
             NSSize::new(width - (OVERLAY_HORIZONTAL_PADDING * 2.0), text_height),
         ));
-        if let Some(mtm) = MainThreadMarker::new() {
-            place_overlay_on_screen(&self.panel, width, height, mtm);
-        }
-        self.panel.setAlphaValue(1.0);
+        let positioned = MainThreadMarker::new()
+            .is_some_and(|mtm| place_overlay_on_screen(&self.panel, width, height, mtm));
+        self.panel.setAlphaValue(if positioned { 1.0 } else { 0.0 });
         self.panel.orderFront(None);
     }
 }

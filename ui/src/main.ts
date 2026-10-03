@@ -21,7 +21,6 @@ import {
   requestDictationPermissions,
   readUtf8Path,
   relaunchApp,
-  resizeSettingsWindow,
   saveAndApplyConfig,
   setDictationEnabled,
   writeUtf8Path,
@@ -319,7 +318,7 @@ async function saveWordReplacement(): Promise<void> {
   } catch {
     return;
   }
-  fitWindowToContent();
+
 }
 
 function persistLastTranscript(text: string): void {
@@ -351,22 +350,19 @@ function addHistoryEntry(text: string | undefined): void {
   if (!trimmed) {
     return;
   }
-  const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const stamp = new Date().toLocaleString([], {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   dictationHistory.unshift({ text: trimmed, time: stamp });
   dictationHistory = dictationHistory.slice(0, HISTORY_LIMIT);
   saveHistory();
   renderHistory();
   showLastTranscript(trimmed, true);
-  fitWindowToContent();
-}
 
-function fitWindowToContent(): void {
-  requestAnimationFrame(() => {
-    const app = document.querySelector(".app");
-    const contentHeight =
-      app instanceof HTMLElement ? app.offsetHeight : document.body.scrollHeight;
-    void resizeSettingsWindow(contentHeight);
-  });
 }
 
 function trimmedCorrections(): Correction[] {
@@ -534,7 +530,7 @@ function renderCorrections(): void {
     empty.className = "field-hint corrections-empty";
     empty.textContent = query === "" ? "No corrections yet." : "No corrections match.";
     elements.correctionsList.appendChild(empty);
-    fitWindowToContent();
+
     return;
   }
   for (const rule of visible) {
@@ -582,7 +578,7 @@ function renderCorrections(): void {
     row.append(spoken, arrow, written, remove);
     elements.correctionsList.appendChild(row);
   }
-  fitWindowToContent();
+
 }
 
 function isHotkeyChoice(value: string): value is HotkeyChoice {
@@ -636,7 +632,7 @@ async function populateModels(): Promise<void> {
   }
 
   updateModelDownloadButton();
-  fitWindowToContent();
+
 }
 
 function selectedModel(): ModelChoice | undefined {
@@ -715,7 +711,7 @@ function setInsertNote(text: string | undefined): void {
     elements.openAccessibility.textContent = action.label;
     insertBannerPane = action.pane;
   }
-  fitWindowToContent();
+
 }
 
 function applyStatusEvent(payload: DictationStatusEvent): void {
@@ -812,7 +808,7 @@ function setUpTabs(): void {
       tabs.forEach((other) => other.classList.toggle("is-active", other === tab));
       const target = `panel-${tab.getAttribute("data-tab") ?? ""}`;
       panels.forEach((panel) => panel.classList.toggle("is-active", panel.id === target));
-      fitWindowToContent();
+
     });
   });
 }
@@ -867,7 +863,7 @@ function renderSetupStatus(status: MacosSetupStatus): void {
     elements.setupNote.textContent =
       "Turn on the switches macOS shows, then wait. Rustle will restart itself.";
   }
-  fitWindowToContent();
+
 }
 
 async function refreshSetupStatus(): Promise<void> {
@@ -1042,7 +1038,7 @@ async function checkForAvailableUpdate(startedByTheUser: boolean): Promise<void>
     } else {
       elements.checkUpdates.disabled = false;
     }
-    fitWindowToContent();
+
     return;
   }
   elements.checkUpdates.textContent = `Update to ${pendingUpdate.version}`;
@@ -1055,7 +1051,7 @@ async function checkForAvailableUpdate(startedByTheUser: boolean): Promise<void>
   if (startedByTheUser) {
     showGeneralTab();
   }
-  fitWindowToContent();
+
 }
 
 async function installAvailableUpdate(): Promise<void> {
@@ -1233,7 +1229,7 @@ async function initialise(): Promise<void> {
     dictationHistory = [];
     saveHistory();
     renderHistory();
-    fitWindowToContent();
+
   });
   elements.wordReplaceCancel.addEventListener("click", () => {
     closeWordReplacement();
@@ -1257,7 +1253,7 @@ async function initialise(): Promise<void> {
     }
   });
   setUpTabs();
-  fitWindowToContent();
+
 }
 
 void initialise().catch((error) => {

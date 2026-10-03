@@ -77,10 +77,6 @@ export function requestDictationPermissions(): Promise<void> {
   return invoke("request_dictation_permissions");
 }
 
-export function resizeSettingsWindow(contentHeight: number): Promise<void> {
-  return invoke("resize_settings_window", { contentHeight });
-}
-
 export function listenForMacosSetup(
   onEvent: (status: MacosSetupStatus) => void,
 ): Promise<UnlistenFn> {

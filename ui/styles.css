@@ -43,6 +43,7 @@
 html,
 body {
   margin: 0;
+  height: 100%;
 }
 
 body {
@@ -63,6 +64,7 @@ select {
 }
 
 .app {
+  height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -167,11 +169,16 @@ select {
 }
 
 .body {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
 .tab-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: none;
   flex-direction: column;
   gap: 11px;
@@ -318,7 +325,8 @@ html[data-os="linux"] select {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 320px;
+  flex: 1;
+  min-height: 80px;
   overflow-y: auto;
   padding: 8px;
   border: 1px solid var(--border);
@@ -396,7 +404,8 @@ html[data-os="linux"] select {
 }
 
 .history {
-  max-height: 380px;
+  flex: 1;
+  min-height: 80px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -758,4 +767,16 @@ html[data-os="ios"] .actions,
 html[data-os="android"] .actions {
   position: sticky;
   bottom: 0;
+}
+
+#panel-corrections > .field {
+  flex: 1;
+  min-height: 0;
+}
+
+.masthead,
+.tabs,
+.history-item,
+.correction-row {
+  flex-shrink: 0;
 }

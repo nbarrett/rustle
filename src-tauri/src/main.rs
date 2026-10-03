@@ -291,29 +291,6 @@ fn open_permission_settings(pane: String) {
     }
 }
 
-#[tauri::command]
-fn resize_settings_window(app: AppHandle, content_height: f64) {
-    let Some(window) = app.get_webview_window("settings") else {
-        return;
-    };
-    let (Ok(inner), Ok(outer), Ok(scale)) = (
-        window.inner_size(),
-        window.outer_size(),
-        window.scale_factor(),
-    ) else {
-        return;
-    };
-    let title_bar_minimum = 28.0 * scale;
-    let chrome_height = (outer.height as f64 - inner.height as f64).max(title_bar_minimum);
-    let bottom_margin = 8.0 * scale;
-    let target_height =
-        ((content_height * scale + chrome_height + bottom_margin).round() as u32).max(200);
-    let locked_size = tauri::PhysicalSize::new(outer.width, target_height);
-    let _ = window.set_size(locked_size);
-    let _ = window.set_min_size(Some(locked_size));
-    let _ = window.set_max_size(Some(locked_size));
-}
-
 fn process_was_started_as_login_item() -> bool {
     std::env::args().any(|argument| argument == LAUNCHED_AT_LOGIN_ARGUMENT)
 }
@@ -546,7 +523,6 @@ fn main() {
             show_settings_window,
             open_accessibility_settings,
             open_permission_settings,
-            resize_settings_window,
             list_hotkey_choices,
             host_platform,
             write_utf8_path,

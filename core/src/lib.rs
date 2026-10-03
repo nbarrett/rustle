@@ -2,7 +2,9 @@ pub mod config;
 #[cfg(feature = "files")]
 pub mod download;
 pub mod hotkey;
+pub mod hud_placement;
 pub mod install_location;
+pub mod insertion;
 
 #[cfg(feature = "runtime")]
 pub mod audio;

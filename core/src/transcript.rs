@@ -6,7 +6,40 @@ pub fn is_nonspeech_annotation(segment: &str) -> bool {
         || (segment.starts_with('(') && segment.ends_with(')'))
 }
 
-pub fn transcript_is_only_thank_you(text: &str) -> bool {
+const WHISPER_OUTRO_PHRASES: &[&str] = &[
+    "thank you very much",
+    "thank you so much",
+    "thank you thank you",
+    "thanks so much",
+    "thanks a lot",
+    "thanks thanks",
+    "thank you",
+    "thanks",
+    "see you next week",
+    "see you next time",
+    "see you later",
+    "see you soon",
+    "see ya later",
+    "see ya soon",
+    "good bye",
+    "goodbye",
+    "bye bye",
+    "okay bye",
+    "ok bye",
+    "take care",
+    "see you",
+    "see ya",
+    "cheers",
+    "okay",
+    "cya",
+    "bye",
+    "ok",
+    "i am sorry",
+    "i m sorry",
+    "sorry",
+];
+
+pub fn transcript_is_only_thanks(text: &str) -> bool {
     matches!(
         normalised_transcript_words(text).as_str(),
         "thank you"
@@ -17,11 +50,66 @@ pub fn transcript_is_only_thank_you(text: &str) -> bool {
             | "thanks a lot"
             | "thank you thank you"
             | "thanks thanks"
-            | "bye"
+    )
+}
+
+fn transcript_is_only_a_whisper_farewell(text: &str) -> bool {
+    matches!(
+        normalised_transcript_words(text).as_str(),
+        "bye"
             | "goodbye"
             | "good bye"
             | "bye bye"
+            | "see you"
+            | "see ya"
+            | "see ya later"
+            | "see ya soon"
+            | "cya"
+            | "see you soon"
+            | "see you later"
+            | "see you next week"
+            | "see you next time"
+            | "take care"
+            | "cheers"
+            | "ok"
+            | "okay"
+            | "ok bye"
+            | "okay bye"
     )
+}
+
+fn transcript_is_only_a_whisper_apology(text: &str) -> bool {
+    matches!(
+        normalised_transcript_words(text).as_str(),
+        "sorry" | "i m sorry" | "i am sorry"
+    )
+}
+
+fn words_are_only_whisper_outro_phrases(words: &str) -> bool {
+    let mut remaining = words.trim();
+    if remaining.is_empty() {
+        return false;
+    }
+    while !remaining.is_empty() {
+        let matched = WHISPER_OUTRO_PHRASES.iter().find(|phrase| {
+            remaining == **phrase
+                || remaining
+                    .strip_prefix(*phrase)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
+        });
+        let Some(phrase) = matched else {
+            return false;
+        };
+        remaining = remaining[phrase.len()..].trim_start();
+    }
+    true
+}
+
+pub fn transcript_is_only_a_whisper_outro(text: &str) -> bool {
+    transcript_is_only_thanks(text)
+        || transcript_is_only_a_whisper_farewell(text)
+        || transcript_is_only_a_whisper_apology(text)
+        || words_are_only_whisper_outro_phrases(&normalised_transcript_words(text))
 }
 
 pub fn final_pass_threw_away_the_spoken_words(live: &str, spoken: &str) -> bool {
@@ -36,7 +124,7 @@ pub fn final_pass_threw_away_the_spoken_words(live: &str, spoken: &str) -> bool 
     if transcript_is_a_whisper_blank_phrase(spoken) {
         return true;
     }
-    if transcript_is_only_thank_you(spoken) && spoken_words != live_words {
+    if transcript_is_only_a_whisper_outro(spoken) && spoken_words != live_words {
         return true;
     }
     live_words.starts_with(&spoken_words) && live_words.len() > spoken_words.len()
@@ -50,28 +138,14 @@ pub fn final_pass_only_extends_the_spoken_words(live: &str, spoken: &str) -> boo
         && spoken_words.len() >= live_words.len()
 }
 
-pub fn without_a_trailing_whisper_thank_you(text: &str) -> String {
-    let mut current = text.trim_end().to_string();
-    loop {
-        let Some(stripped) = strip_one_trailing_hallucinated_thank_you(&current) else {
-            break;
-        };
-        if stripped == current {
-            break;
-        }
-        current = stripped;
-    }
-    current
-}
-
-fn strip_one_trailing_hallucinated_thank_you(text: &str) -> Option<String> {
+fn strip_one_trailing_whisper_outro(text: &str) -> Option<String> {
     let without_end_marks = text.trim_end_matches(|character: char| {
         matches!(character, '.' | '!' | '?' | ',' | ';' | ':') || character.is_whitespace()
     });
     let boundary =
         without_end_marks.rfind(|character: char| matches!(character, '.' | '!' | '?'))?;
     let tail = without_end_marks[boundary + 1..].trim();
-    if tail.is_empty() || !transcript_is_a_whisper_blank_phrase(tail) {
+    if tail.is_empty() || !transcript_is_a_trailing_whisper_outro(tail) {
         return None;
     }
     let head = without_end_marks[..=boundary].trim_end();
@@ -91,10 +165,35 @@ fn without_a_period_stacked_on_another_end_mark(text: &str) -> String {
     trimmed.to_string()
 }
 
-pub fn transcript_is_a_whisper_blank_phrase(text: &str) -> bool {
-    if transcript_is_only_thank_you(text) {
-        return true;
+pub fn transcript_is_a_trailing_whisper_outro(text: &str) -> bool {
+    transcript_is_only_a_whisper_outro(text) || transcript_is_a_whisper_blank_phrase(text)
+}
+
+pub fn live_preview_only_adds_a_whisper_outro(previous: &str, next: &str) -> bool {
+    let previous_words = normalised_transcript_words(previous);
+    let next_words = normalised_transcript_words(next);
+    if previous_words.is_empty() || !next_words.starts_with(&previous_words) {
+        return false;
     }
+    let extra = next_words
+        .strip_prefix(&previous_words)
+        .map(str::trim)
+        .unwrap_or("");
+    !extra.is_empty() && transcript_is_a_trailing_whisper_outro(extra)
+}
+
+pub fn without_trailing_whisper_outros(text: &str) -> String {
+    let mut current = text.trim_end().to_string();
+    while let Some(stripped) = strip_one_trailing_whisper_outro(&current) {
+        if stripped == current {
+            break;
+        }
+        current = stripped;
+    }
+    current
+}
+
+pub fn transcript_is_a_whisper_blank_phrase(text: &str) -> bool {
     let normalised = normalised_transcript_words(text);
     if normalised.is_empty() {
         return text.trim().is_empty();
@@ -115,10 +214,6 @@ pub fn transcript_is_a_whisper_blank_phrase(text: &str) -> bool {
             | "silence"
             | "subtitle"
             | "subtitles"
-            | "bye"
-            | "goodbye"
-            | "good bye"
-            | "bye bye"
     ) || normalised.starts_with("thanks for watching")
         || normalised.starts_with("thank you for watching")
         || normalised.starts_with("subtitles by")
@@ -140,66 +235,12 @@ fn normalised_transcript_words(text: &str) -> String {
     words.join(" ")
 }
 
-pub fn without_a_capital_when_the_sentence_continues(
-    text: &str,
-    sentence_continues: bool,
-) -> String {
-    if !sentence_continues {
-        return text.to_string();
+pub fn without_whisper_silence_ellipses(text: &str) -> String {
+    let mut current = text.replace('…', "...");
+    while current.contains("...") {
+        current = current.replace("...", " ");
     }
-    let Some(first_letter_index) = text.find(|character: char| character.is_alphabetic()) else {
-        return text.to_string();
-    };
-    let first_word: String = text[first_letter_index..]
-        .chars()
-        .take_while(|character| !character.is_whitespace())
-        .collect();
-    if first_word_must_keep_its_capital(&first_word) {
-        return text.to_string();
-    }
-    let mut characters = text[first_letter_index..].chars();
-    let Some(first_letter) = characters.next() else {
-        return text.to_string();
-    };
-    format!(
-        "{}{}{}",
-        &text[..first_letter_index],
-        first_letter.to_lowercase(),
-        characters.as_str()
-    )
-}
-
-pub fn first_word_must_keep_its_capital(word: &str) -> bool {
-    let trimmed = word.trim_end_matches(|character: char| !character.is_alphanumeric());
-    if trimmed == "I" || trimmed.starts_with("I'") || trimmed.starts_with("I’") {
-        return true;
-    }
-    trimmed
-        .chars()
-        .skip(1)
-        .any(|character| character.is_uppercase())
-}
-
-pub fn caret_text_leaves_a_sentence_open(text_before_caret: &str) -> bool {
-    for character in text_before_caret.chars().rev() {
-        if character == '\n' || character == '\r' {
-            return false;
-        }
-        if character.is_whitespace()
-            || matches!(character, '(' | '[' | '{' | '"' | '\'' | '“' | '‘')
-        {
-            continue;
-        }
-        return !matches!(character, '.' | '!' | '?' | '…');
-    }
-    false
-}
-
-pub fn without_trailing_ellipsis(text: &str) -> &str {
-    text.trim_end()
-        .trim_end_matches("...")
-        .trim_end_matches('…')
-        .trim_end()
+    current.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub fn transcript_ready_for_the_clipboard(
@@ -214,9 +255,9 @@ pub fn transcript_ready_for_the_clipboard(
         trimmed_source.to_string()
     };
     let corrected = apply_corrections(&regional, corrections);
-    let without_hallucinations = without_a_trailing_whisper_thank_you(corrected.trim());
-    let spoken = without_trailing_ellipsis(without_hallucinations.trim()).trim();
-    if spoken.is_empty() || transcript_is_a_whisper_blank_phrase(spoken) {
+    let without_hallucinations = without_trailing_whisper_outros(corrected.trim());
+    let spoken = without_whisper_silence_ellipses(without_hallucinations.trim());
+    if spoken.is_empty() || transcript_is_a_whisper_blank_phrase(&spoken) {
         return None;
     }
     Some(spoken.to_string())
@@ -226,9 +267,10 @@ pub fn transcript_ready_for_the_clipboard(
 mod tests {
     use super::{
         final_pass_only_extends_the_spoken_words, final_pass_threw_away_the_spoken_words,
-        normalised_transcript_words, transcript_is_a_whisper_blank_phrase,
-        transcript_is_only_thank_you, transcript_ready_for_the_clipboard,
-        without_a_trailing_whisper_thank_you,
+        live_preview_only_adds_a_whisper_outro, normalised_transcript_words,
+        transcript_is_a_whisper_blank_phrase, transcript_is_only_a_whisper_outro,
+        transcript_ready_for_the_clipboard, without_trailing_whisper_outros,
+        without_whisper_silence_ellipses,
     };
     use crate::config::Correction;
 
@@ -290,8 +332,8 @@ mod tests {
         assert!(transcript_is_a_whisper_blank_phrase("Please subscribe"));
         assert!(transcript_is_a_whisper_blank_phrase(""));
         assert!(transcript_is_a_whisper_blank_phrase("   "));
-        assert!(transcript_is_a_whisper_blank_phrase("Thank you."));
-        assert!(transcript_is_a_whisper_blank_phrase("thanks"));
+        assert!(!transcript_is_a_whisper_blank_phrase("Thank you."));
+        assert!(!transcript_is_a_whisper_blank_phrase("thanks"));
         assert!(!transcript_is_a_whisper_blank_phrase(
             "hold the function key"
         ));
@@ -305,50 +347,85 @@ mod tests {
     }
 
     #[test]
-    fn a_trailing_thank_you_sentence_is_stripped() {
+    fn a_trailing_thank_you_sentence_is_stripped_without_live_speech() {
         assert_eq!(
-            without_a_trailing_whisper_thank_you(
-                "See what I mean about the thank you ?. Thank you."
-            ),
+            without_trailing_whisper_outros("See what I mean about the thank you ?. Thank you."),
             "See what I mean about the thank you ?"
         );
         assert_eq!(
-            without_a_trailing_whisper_thank_you("Hello. Thank you."),
+            without_trailing_whisper_outros("Hello. Thank you."),
             "Hello."
         );
         assert_eq!(
-            without_a_trailing_whisper_thank_you("Please send the invoice, thank you"),
+            without_trailing_whisper_outros("Please send the invoice, thank you"),
             "Please send the invoice, thank you"
         );
+        assert_eq!(without_trailing_whisper_outros("Thank you."), "Thank you.");
+        assert_eq!(without_trailing_whisper_outros("I'm sorry."), "I'm sorry.");
         assert_eq!(
-            without_a_trailing_whisper_thank_you("Thank you."),
-            "Thank you."
-        );
-        assert_eq!(
-            without_a_trailing_whisper_thank_you("That's all. Thanks for watching."),
+            without_trailing_whisper_outros("That's all. Thanks for watching."),
             "That's all."
         );
         assert_eq!(
-            without_a_trailing_whisper_thank_you("Do it like the other one. Bye."),
+            without_trailing_whisper_outros("Do it like the other one. Bye."),
             "Do it like the other one."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros("Book the walk. See you next week."),
+            "Book the walk."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros("Book the walk. See ya."),
+            "Book the walk."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros("Book the walk. See ya later."),
+            "Book the walk."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros("See what happens. OK."),
+            "See what happens."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros("See what happens. Okay."),
+            "See what happens."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros(
+                "Not sure what he means about Sarah, she should be available. I'm sorry. I'm sorry. I'm sorry. I'm sorry. I'm sorry. Thank you."
+            ),
+            "Not sure what he means about Sarah, she should be available."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros(
+                "She should be available. I'm sorry I'm sorry Thank you."
+            ),
+            "She should be available."
         );
     }
 
     #[test]
-    fn a_lone_thank_you_is_treated_as_a_whisper_hallucination() {
-        assert!(transcript_is_only_thank_you("Thank you."));
-        assert!(transcript_is_only_thank_you("Thanks!"));
-        assert!(transcript_is_only_thank_you("Thank you so much"));
-        assert!(transcript_is_a_whisper_blank_phrase("Thank you."));
-        assert!(transcript_is_a_whisper_blank_phrase("Thanks"));
-        assert!(transcript_is_a_whisper_blank_phrase("Bye."));
-        assert!(transcript_is_only_thank_you("Goodbye"));
-        assert!(!transcript_is_only_thank_you(
+    fn a_lone_thank_you_is_kept_as_spoken_words() {
+        assert!(transcript_is_only_a_whisper_outro("Thank you."));
+        assert!(transcript_is_only_a_whisper_outro("Thanks!"));
+        assert!(transcript_is_only_a_whisper_outro("Thank you so much"));
+        assert!(!transcript_is_a_whisper_blank_phrase("Thank you."));
+        assert!(!transcript_is_a_whisper_blank_phrase("Thanks"));
+        assert!(!transcript_is_a_whisper_blank_phrase("Bye."));
+        assert!(transcript_is_only_a_whisper_outro("Goodbye"));
+        assert!(transcript_is_only_a_whisper_outro("See you next week"));
+        assert!(transcript_is_only_a_whisper_outro("See ya"));
+        assert!(transcript_is_only_a_whisper_outro("See ya later."));
+        assert!(!transcript_is_only_a_whisper_outro(
             "Please send the invoice, thank you"
         ));
         assert!(!transcript_is_a_whisper_blank_phrase(
             "Please send the invoice, thank you"
         ));
+        assert_eq!(
+            transcript_ready_for_the_clipboard("Thank you.", &[], false),
+            Some("Thank you.".to_string())
+        );
     }
 
     #[test]
@@ -366,6 +443,35 @@ mod tests {
             "Please send the invoice, thank you"
         ));
         assert!(!final_pass_threw_away_the_spoken_words("", "Thank you."));
+    }
+
+    #[test]
+    fn live_preview_does_not_append_a_silence_okay() {
+        assert!(live_preview_only_adds_a_whisper_outro(
+            "See what happens.",
+            "See what happens. OK."
+        ));
+        assert!(!live_preview_only_adds_a_whisper_outro(
+            "See what happens.",
+            "See what happens next."
+        ));
+    }
+
+    #[test]
+    fn whisper_silence_ellipses_are_removed() {
+        assert_eq!(
+            without_whisper_silence_ellipses("And... ... ... ... Lots of ellipses get put in."),
+            "And Lots of ellipses get put in."
+        );
+        assert_eq!(
+            without_whisper_silence_ellipses("the things that…"),
+            "the things that"
+        );
+        assert_eq!(without_whisper_silence_ellipses("... ... ..."), "");
+        assert_eq!(
+            without_whisper_silence_ellipses("Hello. World"),
+            "Hello. World"
+        );
     }
 
     #[test]

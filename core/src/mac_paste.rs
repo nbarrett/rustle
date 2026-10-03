@@ -1,14 +1,14 @@
 use anyhow::{anyhow, Result};
 use dispatch2::DispatchQueue;
-use objc2::runtime::AnyObject;
+use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{msg_send, AnyThread, MainThreadMarker};
 use objc2_app_kit::{
-    NSApplicationActivationOptions, NSPasteboard, NSPasteboardTypeString, NSRunningApplication,
-    NSWorkspace,
+    NSApplicationActivationOptions, NSPasteboard, NSPasteboardItem, NSPasteboardTypeString,
+    NSRunningApplication, NSWorkspace,
 };
 use objc2_foundation::{
     NSAppleEventDescriptor, NSAppleScript, NSAppleScriptErrorBriefMessage,
-    NSAppleScriptErrorMessage, NSDictionary, NSString,
+    NSAppleScriptErrorMessage, NSArray, NSDictionary, NSString,
 };
 use std::ffi::c_void;
 use std::io::Write;
@@ -548,15 +548,68 @@ pub fn write_pasteboard_string(text: &str) -> Result<()> {
     Ok(())
 }
 
+fn copy_pasteboard_items(
+    pasteboard: &NSPasteboard,
+) -> Result<Vec<objc2::rc::Retained<NSPasteboardItem>>> {
+    let mut saved_items = Vec::new();
+    if let Some(items) = pasteboard.pasteboardItems() {
+        for item in items.iter() {
+            let saved_item = NSPasteboardItem::new();
+            for item_type in item.types().iter() {
+                let data = item
+                    .dataForType(&item_type)
+                    .ok_or_else(|| anyhow!("could not read a pasteboard format"))?;
+                if !saved_item.setData_forType(&data, &item_type) {
+                    return Err(anyhow!("could not preserve a pasteboard format"));
+                }
+            }
+            saved_items.push(saved_item);
+        }
+    }
+    Ok(saved_items)
+}
+
+fn restore_pasteboard_items_if_unchanged(
+    pasteboard: &NSPasteboard,
+    transcript_change_count: isize,
+    saved_items: &[objc2::rc::Retained<NSPasteboardItem>],
+) -> Result<bool> {
+    if pasteboard.changeCount() != transcript_change_count {
+        return Ok(false);
+    }
+    pasteboard.clearContents();
+    if !saved_items.is_empty() {
+        let objects: Vec<_> = saved_items
+            .iter()
+            .map(|item| ProtocolObject::from_ref(&**item))
+            .collect();
+        if !pasteboard.writeObjects(&NSArray::from_slice(&objects)) {
+            return Err(anyhow!("could not restore the pasteboard"));
+        }
+    }
+    Ok(true)
+}
+
 pub fn paste_string_into_pid(pid: i32, text: &str) -> Result<()> {
     if text.is_empty() {
         return Ok(());
     }
     activate_pid(pid)?;
+    let pasteboard = NSPasteboard::generalPasteboard();
+    let original_change_count = pasteboard.changeCount();
+    let saved_items = copy_pasteboard_items(&pasteboard)?;
+    if pasteboard.changeCount() != original_change_count {
+        return Err(anyhow!(
+            "clipboard changed while its contents were being preserved"
+        ));
+    }
     write_pasteboard_string(text)?;
+    let transcript_change_count = pasteboard.changeCount();
     std::thread::sleep(std::time::Duration::from_millis(40));
-    post_command_v_keystroke()?;
-    Ok(())
+    let paste_result = post_command_v_keystroke();
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    restore_pasteboard_items_if_unchanged(&pasteboard, transcript_change_count, &saved_items)?;
+    paste_result
 }
 
 pub fn post_command_v_keystroke() -> Result<()> {
@@ -876,5 +929,116 @@ mod tests {
         assert!(super::name_is_chrome_ui("Control Centre"));
         assert!(super::name_is_chrome_ui("Control Center"));
         assert!(!super::name_is_chrome_ui("iTerm2"));
+    }
+
+    #[test]
+    fn copies_every_pasteboard_item_and_format_before_the_original_is_cleared() {
+        use objc2_foundation::NSData;
+        let pasteboard = super::NSPasteboard::pasteboardWithUniqueName();
+        let image_type = super::NSString::from_str("public.png");
+        let image_bytes = NSData::with_bytes(b"image payload");
+        let image_item = super::NSPasteboardItem::new();
+        assert!(image_item.setData_forType(&image_bytes, &image_type));
+        assert!(image_item
+            .setString_forType(&super::NSString::from_str("image description"), unsafe {
+                super::NSPasteboardTypeString
+            },));
+        let second_item = super::NSPasteboardItem::new();
+        assert!(second_item.setData_forType(&NSData::with_bytes(b"second image"), &image_type));
+        let objects = [
+            super::ProtocolObject::from_ref(&*image_item),
+            super::ProtocolObject::from_ref(&*second_item),
+        ];
+        assert!(pasteboard.writeObjects(&super::NSArray::from_slice(&objects)));
+        let saved_items = super::copy_pasteboard_items(&pasteboard).unwrap();
+        pasteboard.clearContents();
+        assert_eq!(saved_items.len(), 2);
+        assert_eq!(
+            saved_items[0].dataForType(&image_type).unwrap().to_vec(),
+            b"image payload"
+        );
+        assert_eq!(
+            saved_items[1].dataForType(&image_type).unwrap().to_vec(),
+            b"second image"
+        );
+        assert_eq!(saved_items[0].types().len(), 2);
+    }
+
+    #[test]
+    fn restoring_clipboard_items_keeps_images_and_additional_formats() {
+        let pasteboard = super::NSPasteboard::pasteboardWithUniqueName();
+        let original = super::NSPasteboardItem::new();
+        let image_type = super::NSString::from_str("public.png");
+        let image_data = objc2_foundation::NSData::with_bytes(b"original image bytes");
+        assert!(original.setData_forType(&image_data, &image_type));
+        assert!(original
+            .setString_forType(&super::NSString::from_str("image description"), unsafe {
+                super::NSPasteboardTypeString
+            }));
+        assert!(pasteboard.writeObjects(&super::NSArray::from_slice(&[
+            super::ProtocolObject::from_ref(&*original)
+        ])));
+        let saved = super::copy_pasteboard_items(&pasteboard).unwrap();
+        pasteboard.clearContents();
+        assert!(
+            pasteboard.setString_forType(&super::NSString::from_str("dictation"), unsafe {
+                super::NSPasteboardTypeString
+            })
+        );
+        let change_count = pasteboard.changeCount();
+        assert!(
+            super::restore_pasteboard_items_if_unchanged(&pasteboard, change_count, &saved)
+                .unwrap()
+        );
+        assert_eq!(
+            pasteboard.dataForType(&image_type).unwrap().to_vec(),
+            b"original image bytes"
+        );
+        assert_eq!(
+            pasteboard
+                .stringForType(unsafe { super::NSPasteboardTypeString })
+                .unwrap()
+                .to_string(),
+            "image description"
+        );
+    }
+
+    #[test]
+    fn restoring_clipboard_does_not_overwrite_a_new_copy() {
+        let pasteboard = super::NSPasteboard::pasteboardWithUniqueName();
+        pasteboard.clearContents();
+        let change_count = pasteboard.changeCount();
+        pasteboard.clearContents();
+        assert!(pasteboard
+            .setString_forType(&super::NSString::from_str("newly copied text"), unsafe {
+                super::NSPasteboardTypeString
+            }));
+        assert!(
+            !super::restore_pasteboard_items_if_unchanged(&pasteboard, change_count, &[]).unwrap()
+        );
+        assert_eq!(
+            pasteboard
+                .stringForType(unsafe { super::NSPasteboardTypeString })
+                .unwrap()
+                .to_string(),
+            "newly copied text"
+        );
+    }
+
+    #[test]
+    fn restoring_an_empty_clipboard_removes_the_borrowed_transcript() {
+        let pasteboard = super::NSPasteboard::pasteboardWithUniqueName();
+        assert!(
+            pasteboard.setString_forType(&super::NSString::from_str("dictation"), unsafe {
+                super::NSPasteboardTypeString
+            })
+        );
+        let change_count = pasteboard.changeCount();
+        assert!(
+            super::restore_pasteboard_items_if_unchanged(&pasteboard, change_count, &[]).unwrap()
+        );
+        assert!(pasteboard
+            .stringForType(unsafe { super::NSPasteboardTypeString })
+            .is_none());
     }
 }
