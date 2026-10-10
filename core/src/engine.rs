@@ -296,12 +296,18 @@ fn run_dictation_controller(
                     );
                     continue;
                 }
-                Err(RecvTimeoutError::Disconnected) => break,
+                Err(RecvTimeoutError::Disconnected) => {
+                    restore_silenced_output(&mut silenced_output);
+                    break;
+                }
             }
         } else {
             match receiver.recv() {
                 Ok(command) => command,
-                Err(_) => break,
+                Err(_) => {
+                    restore_silenced_output(&mut silenced_output);
+                    break;
+                }
             }
         };
 
@@ -408,9 +414,7 @@ fn run_dictation_controller(
                 }
                 if let Some(active) = recording.take() {
                     recording_active.store(false, Ordering::SeqCst);
-                    if let Some(saved) = silenced_output.take() {
-                        crate::output::restore_system_output(saved);
-                    }
+                    restore_silenced_output(&mut silenced_output);
                     let Some((_, transcriber)) = loaded_model.clone() else {
                         report_status(DictationStatus::Failed("model was not loaded".to_string()));
                         continue;
@@ -816,8 +820,9 @@ fn transcribe_captured_samples(
     if trimmed.is_empty() || transcript_is_a_whisper_blank_phrase(trimmed) {
         return None;
     }
-    let shown = without_whisper_silence_ellipses(trimmed);
-    if shown.is_empty() {
+    let shown =
+        without_trailing_whisper_outros(&without_whisper_silence_ellipses(trimmed));
+    if shown.is_empty() || transcript_is_a_whisper_blank_phrase(&shown) {
         return None;
     }
     write_engine_log(&format!("live preview chars={}", shown.chars().count()));
@@ -1350,6 +1355,12 @@ fn write_insert_receipt(session_id: Option<&str>, text: &str, press_return: bool
         session_id.unwrap_or("-")
     );
     let _ = std::fs::write(directory.join("last-insert.txt"), body);
+}
+
+fn restore_silenced_output(saved: &mut Option<crate::output::SilencedOutput>) {
+    if let Some(saved) = saved.take() {
+        crate::output::restore_system_output(saved);
+    }
 }
 
 fn write_engine_log(message: &str) {

@@ -68,6 +68,7 @@ extern "C" {
     fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> bool;
     fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
     fn AXUIElementCreateSystemWide() -> AXUIElementRef;
+    fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut i32) -> i32;
     fn AXUIElementCopyAttributeValue(
         element: AXUIElementRef,
         attribute: CFStringRef,
@@ -204,64 +205,127 @@ pub fn insert_context_for_the_target_field(
 
 pub fn focused_caret_bounds_in_screen_coordinates() -> Result<ScreenRectangle> {
     unsafe {
-        let focused = copy_focused_ui_element(None)?;
+        let target_pid = crate::mac_paste::insert_target_app().map(|app| app.pid);
+        let focused = copy_focused_ui_element(target_pid)?;
         let result = (|| {
+            if let Ok(bounds) =
+                copy_bounds_for_selected_text_marker_range(focused as AXUIElementRef)
+            {
+                return Ok(bounds);
+            }
             let selection = copy_selected_range(focused as AXUIElementRef)?;
             let caret = CFRange {
                 location: selection.location,
                 length: 0,
             };
-            let parameter =
-                AXValueCreate(AX_VALUE_CF_RANGE, &caret as *const CFRange as *const c_void);
-            if parameter.is_null() {
-                return Err(anyhow!("could not create caret range"));
+            if let Ok(bounds) = copy_bounds_for_text_range(focused as AXUIElementRef, caret) {
+                return Ok(bounds);
             }
-            let attribute = cf_string("AXBoundsForRange");
-            let mut value: CFTypeRef = ptr::null();
-            let status = AXUIElementCopyParameterizedAttributeValue(
-                focused as AXUIElementRef,
-                attribute,
-                parameter as CFTypeRef,
-                &mut value,
-            );
-            CFRelease(attribute);
-            CFRelease(parameter as CFTypeRef);
-            if status != AX_ERROR_SUCCESS || value.is_null() {
-                return Err(anyhow!("could not read caret bounds (AX {status})"));
+            let text = copy_string_attribute(focused as AXUIElementRef, "AXValue")?;
+            let length = text.encode_utf16().count() as isize;
+            if selection.location < 0 || selection.location > length || length == 0 {
+                return Err(anyhow!("caret geometry was unavailable"));
             }
-            let mut rect = AccessibilityRectangle {
-                origin: AccessibilityPoint { x: 0.0, y: 0.0 },
-                size: AccessibilitySize {
-                    width: 0.0,
-                    height: 0.0,
-                },
+            let preceding = selection.location > 0;
+            let adjacent = CFRange {
+                location: if preceding { selection.location - 1 } else { 0 },
+                length: 1,
             };
-            let read = AXValueGetValue(
-                value as AXValueRef,
-                AX_VALUE_CG_RECT,
-                &mut rect as *mut AccessibilityRectangle as *mut c_void,
-            );
-            CFRelease(value);
-            if !read
-                || !rect.origin.x.is_finite()
-                || !rect.origin.y.is_finite()
-                || !rect.size.width.is_finite()
-                || !rect.size.height.is_finite()
-                || rect.size.height <= 0.0
-                || rect.size.width < 0.0
-            {
-                return Err(anyhow!("caret bounds were invalid"));
-            }
+            let bounds = copy_bounds_for_text_range(focused as AXUIElementRef, adjacent)?;
             Ok(ScreenRectangle {
-                x: rect.origin.x,
-                y: rect.origin.y,
-                width: rect.size.width.max(1.0),
-                height: rect.size.height,
+                x: if preceding {
+                    bounds.x + bounds.width
+                } else {
+                    bounds.x
+                },
+                width: 1.0,
+                ..bounds
             })
         })();
         CFRelease(focused);
         result
     }
+}
+
+unsafe fn copy_bounds_for_text_range(
+    focused: AXUIElementRef,
+    range: CFRange,
+) -> Result<ScreenRectangle> {
+    let parameter = AXValueCreate(AX_VALUE_CF_RANGE, &range as *const CFRange as *const c_void);
+    if parameter.is_null() {
+        return Err(anyhow!("could not create caret range"));
+    }
+    let attribute = cf_string("AXBoundsForRange");
+    let mut value: CFTypeRef = ptr::null();
+    let status = AXUIElementCopyParameterizedAttributeValue(
+        focused,
+        attribute,
+        parameter as CFTypeRef,
+        &mut value,
+    );
+    CFRelease(attribute);
+    CFRelease(parameter as CFTypeRef);
+    if status != AX_ERROR_SUCCESS || value.is_null() {
+        return Err(anyhow!("could not read caret bounds (AX {status})"));
+    }
+    read_screen_rectangle_and_release_value(value)
+}
+
+unsafe fn copy_bounds_for_selected_text_marker_range(
+    focused: AXUIElementRef,
+) -> Result<ScreenRectangle> {
+    let attribute = cf_string("AXSelectedTextMarkerRange");
+    let mut range: CFTypeRef = ptr::null();
+    let status = AXUIElementCopyAttributeValue(focused, attribute, &mut range);
+    CFRelease(attribute);
+    if status != AX_ERROR_SUCCESS || range.is_null() {
+        return Err(anyhow!(
+            "selected text markers were unavailable (AX {status})"
+        ));
+    }
+    let attribute = cf_string("AXBoundsForTextMarkerRange");
+    let mut value: CFTypeRef = ptr::null();
+    let status = AXUIElementCopyParameterizedAttributeValue(focused, attribute, range, &mut value);
+    CFRelease(attribute);
+    CFRelease(range);
+    if status != AX_ERROR_SUCCESS || value.is_null() {
+        return Err(anyhow!(
+            "text marker geometry was unavailable (AX {status})"
+        ));
+    }
+    read_screen_rectangle_and_release_value(value)
+}
+
+unsafe fn read_screen_rectangle_and_release_value(value: CFTypeRef) -> Result<ScreenRectangle> {
+    let mut rect = AccessibilityRectangle {
+        origin: AccessibilityPoint { x: 0.0, y: 0.0 },
+        size: AccessibilitySize {
+            width: 0.0,
+            height: 0.0,
+        },
+    };
+    let read = AXValueGetValue(
+        value as AXValueRef,
+        AX_VALUE_CG_RECT,
+        &mut rect as *mut AccessibilityRectangle as *mut c_void,
+    );
+    CFRelease(value);
+    if !read
+        || !rect.origin.x.is_finite()
+        || !rect.origin.y.is_finite()
+        || !rect.size.width.is_finite()
+        || !rect.size.height.is_finite()
+        || rect.size.height <= 0.0
+        || rect.size.width < 0.0
+    {
+        return Err(anyhow!("caret bounds were invalid"));
+    }
+    Ok(ScreenRectangle {
+        x: rect.origin.x,
+        y: rect.origin.y,
+        width: rect.size.width.max(1.0),
+        height: rect.size.height,
+    })
 }
 
 pub fn focused_field_bounds_in_screen_coordinates() -> Result<ScreenRectangle> {
@@ -367,10 +431,30 @@ unsafe fn ask_chromium_to_build_its_accessibility_tree(application: AXUIElementR
     if asked.contains_key(&pid) {
         return;
     }
-    let attribute = cf_string("AXManualAccessibility");
-    let status = AXUIElementSetAttributeValue(application, attribute, kCFBooleanTrue);
-    CFRelease(attribute);
-    asked.insert(pid, status == AX_ERROR_SUCCESS);
+    let mut enabled = false;
+    for name in ["AXManualAccessibility", "AXEnhancedUserInterface"] {
+        let attribute = cf_string(name);
+        enabled |= AXUIElementSetAttributeValue(application, attribute, kCFBooleanTrue)
+            == AX_ERROR_SUCCESS;
+        CFRelease(attribute);
+    }
+    let focused_window_attribute = cf_string("AXFocusedWindow");
+    let mut window: CFTypeRef = ptr::null();
+    if AXUIElementCopyAttributeValue(application, focused_window_attribute, &mut window)
+        == AX_ERROR_SUCCESS
+        && !window.is_null()
+    {
+        let attribute = cf_string("AXEnhancedUserInterface");
+        enabled |=
+            AXUIElementSetAttributeValue(window as AXUIElementRef, attribute, kCFBooleanTrue)
+                == AX_ERROR_SUCCESS;
+        CFRelease(attribute);
+        CFRelease(window);
+    }
+    CFRelease(focused_window_attribute);
+    if enabled {
+        asked.insert(pid, true);
+    }
 }
 
 unsafe fn copy_focused_ui_element(target_pid: Option<i32>) -> Result<CFTypeRef> {
@@ -396,6 +480,18 @@ unsafe fn copy_focused_ui_element(target_pid: Option<i32>) -> Result<CFTypeRef> 
         ));
     }
     if focused_status != AX_ERROR_SUCCESS || focused.is_null() {
+        if let Some(target_pid) = target_pid {
+            if let Ok(system_focused) = copy_focused_ui_element(None) {
+                let mut focused_pid = 0;
+                if AXUIElementGetPid(system_focused as AXUIElementRef, &mut focused_pid)
+                    == AX_ERROR_SUCCESS
+                    && focused_pid == target_pid
+                {
+                    return Ok(system_focused);
+                }
+                CFRelease(system_focused);
+            }
+        }
         return Err(anyhow!(
             "could not read the focused field (AX {focused_status})"
         ));

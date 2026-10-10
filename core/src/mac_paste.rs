@@ -148,8 +148,33 @@ impl FrontApp {
                 .is_some_and(bundle_looks_like_an_openai_desktop_app)
     }
 
+    pub fn is_a_web_browser(&self) -> bool {
+        let name = self.name.to_ascii_lowercase();
+        [
+            "brave", "chrome", "chromium", "edge", "firefox", "safari", "vivaldi", "opera", "arc",
+        ]
+        .iter()
+        .any(|browser| name == *browser || name.starts_with(&format!("{browser} ")))
+            || self.bundle.as_deref().is_some_and(|bundle| {
+                [
+                    "com.brave.Browser",
+                    "com.google.Chrome",
+                    "org.chromium.Chromium",
+                    "com.microsoft.edgemac",
+                    "org.mozilla.firefox",
+                    "com.apple.Safari",
+                    "com.vivaldi.Vivaldi",
+                    "com.operasoftware.Opera",
+                    "company.thebrowser.Browser",
+                ]
+                .iter()
+                .any(|browser| bundle.eq_ignore_ascii_case(browser))
+            })
+    }
+
     pub fn pastes_the_finished_clip(&self) -> bool {
-        self.is_outlook()
+        self.is_a_web_browser()
+            || self.is_outlook()
             || self.is_whatsapp()
             || self.is_messages()
             || self.is_an_openai_desktop_app()
@@ -894,6 +919,35 @@ mod tests {
         applescript_literal, bundle_looks_like_an_openai_desktop_app, bundle_looks_like_iterm,
         bundle_looks_like_messages, name_looks_like_iterm,
     };
+
+    #[test]
+    fn browser_dictation_uses_a_finished_paste_instead_of_accessibility_writes() {
+        for (name, bundle) in [
+            ("Brave Browser", "com.brave.Browser"),
+            ("Google Chrome", "com.google.Chrome"),
+            ("Microsoft Edge", "com.microsoft.edgemac"),
+            ("Firefox", "org.mozilla.firefox"),
+            ("Safari", "com.apple.Safari"),
+            ("Arc", "company.thebrowser.Browser"),
+        ] {
+            let app = super::FrontApp {
+                name: name.to_string(),
+                bundle: Some(bundle.to_string()),
+                pid: 123,
+                session_id: None,
+                session_name: None,
+            };
+            assert!(app.pastes_the_finished_clip(), "{name}");
+        }
+        let app = super::FrontApp {
+            name: "TextEdit".to_string(),
+            bundle: Some("com.apple.TextEdit".to_string()),
+            pid: 123,
+            session_id: None,
+            session_name: None,
+        };
+        assert!(!app.pastes_the_finished_clip());
+    }
 
     #[test]
     fn recognises_iterm_process_names() {

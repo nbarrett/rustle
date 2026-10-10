@@ -10,7 +10,7 @@ use objc2::{MainThreadMarker, MainThreadOnly};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
     NSAppearance, NSAppearanceCustomization, NSAppearanceNameDarkAqua, NSBackingStoreType, NSColor,
-    NSFont, NSLineBreakMode, NSPanel, NSPopUpMenuWindowLevel, NSScreen, NSTextAlignment,
+    NSEvent, NSFont, NSLineBreakMode, NSPanel, NSPopUpMenuWindowLevel, NSScreen, NSTextAlignment,
     NSTextField, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
     NSVisualEffectView, NSWindowAnimationBehavior, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
@@ -189,14 +189,14 @@ fn place_overlay_on_screen(
             y: primary_top - rect.y - rect.height,
             ..rect
         });
-    let focused_field = rustle_core::mac_ax::focused_field_bounds_in_screen_coordinates()
-        .ok()
-        .map(|field| ScreenRectangle {
-            y: primary_top - field.y - field.height,
-            ..field
-        });
-    let screen = caret
-        .or(focused_field)
+    let pointer = NSEvent::mouseLocation();
+    let anchor = caret.unwrap_or(ScreenRectangle {
+        x: pointer.x,
+        y: pointer.y,
+        width: 1.0,
+        height: 1.0,
+    });
+    let screen = Some(anchor)
         .and_then(|field| {
             screens.iter().find(|screen| {
                 let frame = screen.frame();
@@ -220,12 +220,8 @@ fn place_overlay_on_screen(
         width: visible.size.width,
         height: visible.size.height,
     };
-    let position = caret
-        .and_then(|caret| place_hud_above_caret(work_area, width, height, caret))
-        .or_else(|| {
-            focused_field.and_then(|field| place_hud_above_caret(work_area, width, height, field))
-        })
-        .or_else(|| place_hud_outside_focused_field(work_area, width, height, focused_field));
+    let position = place_hud_above_caret(work_area, width, height, anchor)
+        .or_else(|| place_hud_outside_focused_field(work_area, width, height, Some(anchor)));
     let Some(position) = position else {
         return false;
     };

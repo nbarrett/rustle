@@ -2,7 +2,12 @@
 pub enum SilencedOutput {
     AlreadySilent,
     Muted,
-    VolumeLowered { previous: f32 },
+    VolumeLowered {
+        previous: f32,
+        object: u32,
+        hogged_device: Option<u32>,
+    },
+    Hogged { device: u32 },
 }
 
 pub fn silence_system_output() -> Option<SilencedOutput> {

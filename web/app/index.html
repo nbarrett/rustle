@@ -51,7 +51,15 @@
           <div class="field">
             <span class="field-label">Word corrections</span>
             <p class="field-hint">Fix words Whisper mishears: heard on the left, written on the right.</p>
-            <input id="corrections-search" type="search" placeholder="Search corrections" autocomplete="off" />
+            <input
+              id="corrections-search"
+              type="search"
+              placeholder="Search corrections"
+              autocomplete="off"
+              autocapitalize="none"
+              autocorrect="off"
+              spellcheck="false"
+            />
             <div id="corrections-list" class="corrections-list"></div>
             <div class="inline-row corrections-actions">
               <button id="add-correction" class="secondary" type="button">Add correction</button>
@@ -121,7 +129,14 @@
     <div id="word-replace" class="word-replace" hidden>
       <div class="word-replace-card">
         <p class="word-replace-label">Replace <span id="word-replace-from" class="word-replace-from"></span> with</p>
-        <input id="word-replace-to" type="text" autocomplete="off" autocapitalize="off" />
+        <input
+          id="word-replace-to"
+          type="text"
+          autocomplete="off"
+          autocapitalize="none"
+          autocorrect="off"
+          spellcheck="false"
+        />
         <div class="word-replace-actions">
           <button id="word-replace-cancel" class="secondary" type="button">Cancel</button>
           <button id="word-replace-save" class="primary" type="button">Save</button>

@@ -317,6 +317,39 @@ function selectedPhraseInside(container: HTMLElement): string | null {
   return spoken === "" ? null : spoken;
 }
 
+function keepLettersAsTyped(field: HTMLInputElement): void {
+  field.autocapitalize = "none";
+  field.autocomplete = "off";
+  field.spellcheck = false;
+  field.setAttribute("autocorrect", "off");
+  let lastTypedKey = "";
+  field.addEventListener("keydown", (event) => {
+    lastTypedKey =
+      event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey
+        ? event.key
+        : "";
+  });
+  field.addEventListener("beforeinput", (event) => {
+    if (event.inputType !== "insertText" || event.data === null) {
+      return;
+    }
+    const typed = lastTypedKey;
+    if (typed.length !== 1 || event.data === typed) {
+      return;
+    }
+    if (event.data.toLocaleLowerCase() !== typed.toLocaleLowerCase()) {
+      return;
+    }
+    event.preventDefault();
+    const start = field.selectionStart ?? field.value.length;
+    const end = field.selectionEnd ?? start;
+    field.value = field.value.slice(0, start) + typed + field.value.slice(end);
+    const caret = start + typed.length;
+    field.setSelectionRange(caret, caret);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 function openWordReplacement(entryIndex: number, spoken: string): void {
   window.getSelection()?.removeAllRanges();
   wordReplaceEntryIndex = entryIndex;
@@ -446,6 +479,7 @@ function renderCorrections(): void {
     spoken.type = "text";
     spoken.placeholder = "heard as…";
     spoken.value = rule.spoken;
+    keepLettersAsTyped(spoken);
     spoken.addEventListener("input", () => {
       rule.spoken = spoken.value;
     });
@@ -456,6 +490,7 @@ function renderCorrections(): void {
     written.type = "text";
     written.placeholder = "write as…";
     written.value = rule.written;
+    keepLettersAsTyped(written);
     written.addEventListener("input", () => {
       rule.written = written.value;
     });
@@ -852,6 +887,8 @@ async function startRustleWeb(): Promise<void> {
   });
   elements.wordReplaceCancel.addEventListener("click", closeWordReplacement);
   elements.wordReplaceSave.addEventListener("click", saveWordReplacement);
+  keepLettersAsTyped(elements.correctionsSearch);
+  keepLettersAsTyped(elements.wordReplaceTo);
   elements.wordReplaceTo.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();

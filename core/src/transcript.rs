@@ -166,7 +166,21 @@ fn without_a_period_stacked_on_another_end_mark(text: &str) -> String {
 }
 
 pub fn transcript_is_a_trailing_whisper_outro(text: &str) -> bool {
-    transcript_is_only_a_whisper_outro(text) || transcript_is_a_whisper_blank_phrase(text)
+    transcript_is_only_a_whisper_outro(text)
+        || transcript_is_a_whisper_blank_phrase(text)
+        || trailing_outro_has_a_leading_digit(&normalised_transcript_words(text))
+}
+
+fn trailing_outro_has_a_leading_digit(words: &str) -> bool {
+    let mut parts = words.split_ascii_whitespace();
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    if first.len() != 1 || !first.chars().all(|character| character.is_ascii_digit()) {
+        return false;
+    }
+    let rest: String = parts.collect::<Vec<_>>().join(" ");
+    words_are_only_whisper_outro_phrases(&rest)
 }
 
 pub fn live_preview_only_adds_a_whisper_outro(previous: &str, next: &str) -> bool {
@@ -184,13 +198,102 @@ pub fn live_preview_only_adds_a_whisper_outro(previous: &str, next: &str) -> boo
 
 pub fn without_trailing_whisper_outros(text: &str) -> String {
     let mut current = text.trim_end().to_string();
-    while let Some(stripped) = strip_one_trailing_whisper_outro(&current) {
-        if stripped == current {
+    loop {
+        let stripped = strip_one_trailing_whisper_outro(&current)
+            .or_else(|| strip_one_title_case_trailing_whisper_outro(&current));
+        let Some(next) = stripped else {
+            break;
+        };
+        if next == current {
             break;
         }
-        current = stripped;
+        current = next;
     }
     current
+}
+
+fn strip_one_title_case_trailing_whisper_outro(text: &str) -> Option<String> {
+    let trimmed = text.trim_end_matches(|character: char| {
+        matches!(character, '.' | '!' | '?' | ',' | ';' | ':') || character.is_whitespace()
+    });
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lower = normalised_transcript_words(trimmed);
+    let phrase = WHISPER_OUTRO_PHRASES.iter().copied().find(|candidate| {
+        !outro_needs_a_sentence_boundary_to_strip(candidate)
+            && (lower == *candidate
+                || lower
+                    .strip_suffix(candidate)
+                    .is_some_and(|rest| rest.is_empty() || rest.ends_with(' ')))
+    })?;
+    if lower == phrase {
+        return None;
+    }
+    let span = trailing_source_matching_normalised_phrase(trimmed, phrase)?;
+    if !span_starts_in_title_case(span) {
+        return None;
+    }
+    let head = trimmed[..trimmed.len() - span.len()]
+        .trim_end_matches(|character: char| character == ',' || character.is_whitespace());
+    if head.is_empty() {
+        return None;
+    }
+    Some(head.to_string())
+}
+
+fn outro_needs_a_sentence_boundary_to_strip(phrase: &str) -> bool {
+    matches!(
+        phrase,
+        "ok" | "okay" | "cheers" | "take care" | "i am sorry" | "i m sorry" | "sorry"
+    )
+}
+
+fn trailing_source_matching_normalised_phrase<'a>(
+    text: &'a str,
+    phrase: &str,
+) -> Option<&'a str> {
+    let phrase_word_count = phrase.split_ascii_whitespace().count();
+    let mut word_count = 0usize;
+    let mut span_start = text.len();
+    let mut in_word = false;
+    for (index, character) in text.char_indices().rev() {
+        if character.is_ascii_alphanumeric() {
+            span_start = index;
+            in_word = true;
+        } else if in_word {
+            word_count += 1;
+            in_word = false;
+            if word_count == phrase_word_count {
+                break;
+            }
+        }
+    }
+    if in_word {
+        word_count += 1;
+    }
+    if word_count != phrase_word_count {
+        return None;
+    }
+    let span = &text[span_start..];
+    if normalised_transcript_words(span) == phrase {
+        Some(span)
+    } else {
+        None
+    }
+}
+
+fn span_starts_in_title_case(span: &str) -> bool {
+    let mut letters = span.chars().filter(|character| character.is_alphabetic());
+    let Some(first) = letters.next() else {
+        return false;
+    };
+    if !first.is_uppercase() {
+        return false;
+    }
+    let rest_are_uppercase = letters.clone().all(|character| character.is_uppercase());
+    let letter_count = 1 + letters.count();
+    !(letter_count > 1 && rest_are_uppercase)
 }
 
 pub fn transcript_is_a_whisper_blank_phrase(text: &str) -> bool {
@@ -401,6 +504,42 @@ mod tests {
                 "She should be available. I'm sorry I'm sorry Thank you."
             ),
             "She should be available."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros(
+                "I've just generated a draft, but for some reason it's showing Thank you"
+            ),
+            "I've just generated a draft, but for some reason it's showing"
+        );
+        assert_eq!(
+            without_trailing_whisper_outros("The invite will be Thank you."),
+            "The invite will be"
+        );
+        assert_eq!(
+            without_trailing_whisper_outros(
+                "we shouldn't be able to see C. Thank you."
+            ),
+            "we shouldn't be able to see C."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros("based on that. Thank you. 1 Thank you"),
+            "based on that."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros("Perfect, thank you. Can you commit this?"),
+            "Perfect, thank you. Can you commit this?"
+        );
+        assert_eq!(
+            without_trailing_whisper_outros("Sounds fantastic, thank you"),
+            "Sounds fantastic, thank you"
+        );
+        assert_eq!(
+            without_trailing_whisper_outros("That's OK"),
+            "That's OK"
+        );
+        assert_eq!(
+            without_trailing_whisper_outros("Tell him I'm sorry"),
+            "Tell him I'm sorry"
         );
     }
 

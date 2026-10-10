@@ -20,13 +20,15 @@ Caret offsets use UTF-16, matching macOS accessibility. Negative ranges, ranges 
 
 Sentence capitalisation is heuristic. Rustle preserves I and acronyms, but cannot reliably distinguish every proper name from a word capitalised by Whisper. British spelling follows the system locale and includes capitalise, capitalised and capitalisation. User corrections run after regional spelling.
 
+Browsers receive the completed transcript through clipboard paste when the hotkey is released. Live words remain in the Rustle HUD while recording. Browser accessibility writes can report success without updating the web editor, so they are not used for browser insertion.
+
 ## Clipboard ownership on macOS
 
 Clipboard insertion preserves every item and readable data format before writing the transcript. If preservation fails or the clipboard changes during capture, insertion stops before replacing it. After the paste delay, restoration runs only if the clipboard still belongs to Rustle's transcript. A new copy is preserved. An originally empty clipboard is restored to empty. The delay is not an acknowledgement from the destination app; real image and paste behaviour must still be checked.
 
 ## HUD placement on macOS
 
-The HUD prefers a position just above the text caret, separated by 16 points. It moves below if there is insufficient room above and stays within the screen edges. macOS caret bounds are read through AXBoundsForRange. If caret bounds are unavailable, it tries just above or below the focused field, then clear screen-edge positions. If no clear position exists, only the menu-bar indicator remains visible. The HUD remains nonactivating and ignores mouse events.
+The HUD prefers a position just above the text caret, separated by 16 points. It moves below if there is insufficient room above and stays within the screen edges. Rustle requests the fuller accessibility interface in Chromium apps and checks the system-wide focused element only when it belongs to the intended destination. macOS caret bounds are read through AXSelectedTextMarkerRange and AXBoundsForTextMarkerRange for rich editors, or AXBoundsForRange for ordinary text fields. If the app rejects zero-length caret ranges, Rustle tries the adjacent character bounds. If caret geometry remains unavailable, it anchors the HUD above or below the mouse pointer rather than the top of the screen. Clear screen-edge positions are used only if neither nearby position fits. If no clear position exists, only the menu-bar indicator remains visible. The HUD remains nonactivating and ignores mouse events.
 
 ## Automated verification
 
@@ -56,4 +58,4 @@ Do not label dictation fixed, commit it or push it solely because automated veri
 
 ## Local build and restart
 
-Run `python3 tools/build_and_restart_rustle.py` on macOS. It tests the workspace, checks both frontends, builds the signed release app, saves a backup, installs it, verifies the executable and restarts Rustle. It does not stage, commit or push source changes. If installation or restart fails, it attempts to restore and reopen the previous app.
+Run `pnpm build:restart` on macOS. It tests the workspace, checks both frontends, builds the signed release app, installs it, verifies the executable and restarts Rustle. It does not stage, commit or push source changes. If installation or restart fails, it attempts to restore and reopen the previous app.
