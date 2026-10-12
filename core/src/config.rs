@@ -14,6 +14,12 @@ pub struct Correction {
     pub written: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HistoryEntry {
+    pub text: String,
+    pub time: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub hotkey: HotkeyChoice,
@@ -136,6 +142,53 @@ pub fn rustle_directory() -> Result<PathBuf> {
 #[cfg(feature = "files")]
 pub fn config_file_path() -> Result<PathBuf> {
     Ok(rustle_directory()?.join("config.json"))
+}
+
+#[cfg(feature = "files")]
+pub fn history_file_path() -> Result<PathBuf> {
+    Ok(rustle_directory()?.join("history.json"))
+}
+
+#[cfg(feature = "files")]
+pub fn last_transcript_file_path() -> Result<PathBuf> {
+    Ok(rustle_directory()?.join("last-transcript.txt"))
+}
+
+#[cfg(feature = "files")]
+pub fn load_history() -> Result<Vec<HistoryEntry>> {
+    let path = history_file_path()?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let parsed: Vec<HistoryEntry> = serde_json::from_str(&text)?;
+    Ok(parsed)
+}
+
+#[cfg(feature = "files")]
+pub fn save_history(entries: &[HistoryEntry]) -> Result<()> {
+    let directory = rustle_directory()?;
+    std::fs::create_dir_all(&directory)?;
+    let text = serde_json::to_string_pretty(entries)?;
+    std::fs::write(history_file_path()?, text)?;
+    Ok(())
+}
+
+#[cfg(feature = "files")]
+pub fn load_last_transcript() -> Result<String> {
+    let path = last_transcript_file_path()?;
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    Ok(std::fs::read_to_string(path)?)
+}
+
+#[cfg(feature = "files")]
+pub fn save_last_transcript(text: &str) -> Result<()> {
+    let directory = rustle_directory()?;
+    std::fs::create_dir_all(&directory)?;
+    std::fs::write(last_transcript_file_path()?, text)?;
+    Ok(())
 }
 
 #[cfg(feature = "files")]
@@ -280,6 +333,17 @@ mod tests {
             apply_corrections("Left bracket, 87 clothes bracket.", &[]),
             "(87)."
         );
+    }
+
+    #[test]
+    fn history_json_round_trips() {
+        let entries = [super::HistoryEntry {
+            text: "Hello from Notes.".to_string(),
+            time: "12 Oct 2026 at 16:52".to_string(),
+        }];
+        let encoded = serde_json::to_string(&entries).unwrap();
+        let decoded: Vec<super::HistoryEntry> = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, entries);
     }
 
     #[test]

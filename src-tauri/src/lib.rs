@@ -4,7 +4,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use rustle_core::audio::list_input_device_names;
-use rustle_core::config::{load_config, model_catalog, save_config, Config, ModelChoice};
+use rustle_core::config::{
+    load_config, load_history, load_last_transcript, model_catalog, save_config, save_history,
+    save_last_transcript, Config, HistoryEntry, ModelChoice,
+};
 use rustle_core::download::download_model_file;
 use rustle_core::engine::{DictationEngine, DictationStatus};
 use rustle_core::hotkey::{HotkeyChoice, HotkeyOption};
@@ -86,6 +89,26 @@ fn current_engine_config(app: &AppHandle) -> Config {
 #[tauri::command]
 fn get_config(app: AppHandle) -> Config {
     current_engine_config(&app)
+}
+
+#[tauri::command]
+fn get_dictation_history() -> Result<Vec<HistoryEntry>, String> {
+    load_history().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn save_dictation_history(entries: Vec<HistoryEntry>) -> Result<(), String> {
+    save_history(&entries).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_last_transcript() -> Result<String, String> {
+    load_last_transcript().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn save_last_transcript_text(text: String) -> Result<(), String> {
+    save_last_transcript(&text).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -535,6 +558,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             get_config,
+            get_dictation_history,
+            save_dictation_history,
+            get_last_transcript,
+            save_last_transcript_text,
             save_and_apply_config,
             list_microphones,
             list_models,

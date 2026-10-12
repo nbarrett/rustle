@@ -5,6 +5,7 @@ import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updat
 import { relaunch } from "@tauri-apps/plugin-process";
 import type {
   Config,
+  HistoryEntry,
   DictationStatusEvent,
   HotkeyOption,
   ModelChoice,
@@ -15,6 +16,22 @@ import type {
 
 export function getConfig(): Promise<Config> {
   return invoke("get_config");
+}
+
+export function getDictationHistory(): Promise<HistoryEntry[]> {
+  return invoke("get_dictation_history");
+}
+
+export function saveDictationHistory(entries: HistoryEntry[]): Promise<void> {
+  return invoke("save_dictation_history", { entries });
+}
+
+export function getLastTranscript(): Promise<string> {
+  return invoke("get_last_transcript");
+}
+
+export function saveLastTranscriptText(text: string): Promise<void> {
+  return invoke("save_last_transcript_text", { text });
 }
 
 export function getAppVersion(): Promise<string> {

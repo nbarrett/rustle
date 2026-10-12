@@ -6,6 +6,8 @@ import {
   getAppVersion,
   getConfig,
   getDictationEnabled,
+  getDictationHistory,
+  getLastTranscript,
   hostPlatform,
   installIntoApplications,
   listHotkeyChoices,
@@ -22,6 +24,8 @@ import {
   readUtf8Path,
   relaunchApp,
   saveAndApplyConfig,
+  saveDictationHistory,
+  saveLastTranscriptText,
   setDictationEnabled,
   writeUtf8Path,
 } from "./commands";
@@ -140,7 +144,7 @@ function isHistoryEntry(value: unknown): value is HistoryEntry {
   return typeof entry.text === "string" && typeof entry.time === "string";
 }
 
-function loadHistory(): HistoryEntry[] {
+function historyFromLocalStorage(): HistoryEntry[] {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || "[]");
     if (!Array.isArray(parsed)) {
@@ -153,14 +157,25 @@ function loadHistory(): HistoryEntry[] {
 }
 
 function saveHistory(): void {
+  const entries = dictationHistory.slice(0, HISTORY_LIMIT);
   try {
-    localStorage.setItem(
-      HISTORY_STORAGE_KEY,
-      JSON.stringify(dictationHistory.slice(0, HISTORY_LIMIT)),
-    );
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(entries));
   } catch {
     return;
   }
+  void saveDictationHistory(entries);
+}
+
+async function loadHistory(): Promise<HistoryEntry[]> {
+  try {
+    const fromDisk = (await getDictationHistory()).filter(isHistoryEntry);
+    if (fromDisk.length > 0) {
+      return fromDisk.slice(0, HISTORY_LIMIT);
+    }
+  } catch {
+    return historyFromLocalStorage();
+  }
+  return historyFromLocalStorage();
 }
 
 function renderHistory(): void {
@@ -360,6 +375,7 @@ function persistLastTranscript(text: string): void {
   } catch {
     return;
   }
+  void saveLastTranscriptText(text);
 }
 
 function showLastTranscript(text: string, persist: boolean): void {
@@ -370,12 +386,16 @@ function showLastTranscript(text: string, persist: boolean): void {
   }
 }
 
-function loadLastTranscript(): string {
+async function loadLastTranscript(): Promise<string> {
   try {
-    return localStorage.getItem(LAST_TRANSCRIPT_STORAGE_KEY) ?? "";
+    const fromDisk = await getLastTranscript();
+    if (fromDisk !== "") {
+      return fromDisk;
+    }
   } catch {
-    return "";
+    return localStorage.getItem(LAST_TRANSCRIPT_STORAGE_KEY) ?? "";
   }
+  return localStorage.getItem(LAST_TRANSCRIPT_STORAGE_KEY) ?? "";
 }
 
 function addHistoryEntry(text: string | undefined): void {
@@ -1246,9 +1266,10 @@ async function initialise(): Promise<void> {
     }
   });
 
-  dictationHistory = loadHistory();
+  dictationHistory = await loadHistory();
+  saveHistory();
   renderHistory();
-  const savedTranscript = loadLastTranscript();
+  const savedTranscript = await loadLastTranscript();
   if (savedTranscript !== "") {
     showLastTranscript(savedTranscript, false);
   } else if (dictationHistory[0]) {
