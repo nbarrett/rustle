@@ -52,6 +52,7 @@ const elements = {
   correctionsList: requiredElement<HTMLDivElement>("corrections-list"),
   correctionsSearch: requiredElement<HTMLInputElement>("corrections-search"),
   addCorrection: requiredElement<HTMLButtonElement>("add-correction"),
+  clearCorrections: requiredElement<HTMLButtonElement>("clear-corrections"),
   exportCorrections: requiredElement<HTMLButtonElement>("export-corrections"),
   importCorrections: requiredElement<HTMLButtonElement>("import-corrections"),
   correctionsFile: requiredElement<HTMLInputElement>("corrections-file"),
@@ -854,6 +855,11 @@ async function startRustleWeb(): Promise<void> {
   elements.clearTranscript.addEventListener("click", () => {
     elements.transcript.value = "";
     showStatus(elements.clipboardStatus, "");
+  });
+  elements.clearCorrections.addEventListener("click", () => {
+    corrections = [];
+    localStorage.setItem(CORRECTIONS_STORAGE_KEY, activeCorrectionsAsJson());
+    renderCorrections();
   });
   elements.clearHistory.addEventListener("click", () => {
     dictationHistory = [];

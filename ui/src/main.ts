@@ -99,6 +99,7 @@ const elements = {
   correctionsList: requiredElement<HTMLDivElement>("corrections-list"),
   correctionsSearch: requiredElement<HTMLInputElement>("corrections-search"),
   addCorrection: requiredElement<HTMLButtonElement>("add-correction"),
+  clearCorrections: requiredElement<HTMLButtonElement>("clear-corrections"),
   exportCorrections: requiredElement<HTMLButtonElement>("export-corrections"),
   importCorrections: requiredElement<HTMLButtonElement>("import-corrections"),
   correctionsFileNote: requiredElement<HTMLParagraphElement>("corrections-file-note"),
@@ -1380,11 +1381,17 @@ async function initialise(): Promise<void> {
   elements.liveTranscript.addEventListener("focus", () => {
     elements.liveTranscript.scrollTop = elements.liveTranscript.scrollHeight;
   });
+  elements.clearCorrections.addEventListener("click", () => {
+    corrections = [];
+    renderCorrections();
+    void persistCorrections().catch(() => {
+      return;
+    });
+  });
   elements.clearHistory.addEventListener("click", () => {
     dictationHistory = [];
     saveHistory();
     renderHistory();
-
   });
   elements.wordReplaceCancel.addEventListener("click", () => {
     closeWordReplacement();

@@ -258,7 +258,7 @@ html[data-os="linux"] select {
   flex: 1;
 }
 
-.corrections-actions {
+.list-actions {
   flex-wrap: wrap;
 }
 
@@ -394,13 +394,6 @@ html[data-os="linux"] select {
 
 .history-details[open] .history-summary::before {
   content: "\25BE  ";
-}
-
-.block-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin: 0 0 6px;
 }
 
 .history {
