@@ -128,6 +128,7 @@ const elements = {
 };
 
 let dictationHistory: HistoryEntry[] = [];
+let historyRangeAnchor: { entryIndex: number; wordIndex: number } | null = null;
 let selectedModelFileName = DEFAULT_MODEL_FILE_NAME;
 let corrections: Correction[] = [];
 let modelCatalog: ModelChoice[] = [];
@@ -179,6 +180,7 @@ async function loadHistory(): Promise<HistoryEntry[]> {
 }
 
 function renderHistory(): void {
+  historyRangeAnchor = null;
   elements.historyList.replaceChildren();
   dictationHistory.forEach((entry, entryIndex) => {
     const item = document.createElement("div");
@@ -194,6 +196,7 @@ function renderHistory(): void {
       if (spoken === null || !spoken.includes(" ")) {
         return;
       }
+      historyRangeAnchor = null;
       openWordReplacement(entryIndex, spoken);
     });
     item.append(time, text);
@@ -217,29 +220,123 @@ function selectedPhraseInside(container: HTMLElement): string | null {
   return spoken;
 }
 
-function appendHistoryWords(
-  container: HTMLElement,
-  text: string,
-  entryIndex: number,
-): void {
+type HistoryToken =
+  | { kind: "word"; text: string; wordIndex: number }
+  | { kind: "gap"; text: string };
+
+function historyTokensFromText(text: string): HistoryToken[] {
   const parts = text.split(/([A-Za-z0-9]+(?:['’][A-Za-z0-9]+)*)/);
+  const tokens: HistoryToken[] = [];
+  let wordIndex = 0;
   for (const part of parts) {
     if (part === "") {
       continue;
     }
     if (/^[A-Za-z0-9]/.test(part)) {
-      const word = document.createElement("span");
-      word.className = "history-word";
-      word.textContent = part;
-      word.addEventListener("dblclick", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        openWordReplacement(entryIndex, part);
-      });
-      container.append(word);
+      tokens.push({ kind: "word", text: part, wordIndex });
+      wordIndex += 1;
     } else {
-      container.append(part);
+      tokens.push({ kind: "gap", text: part });
     }
+  }
+  return tokens;
+}
+
+function spokenPhraseBetweenWords(
+  tokens: HistoryToken[],
+  startWord: number,
+  endWord: number,
+): string {
+  const from = Math.min(startWord, endWord);
+  const to = Math.max(startWord, endWord);
+  let collecting = false;
+  let phrase = "";
+  for (const token of tokens) {
+    if (token.kind === "word") {
+      if (token.wordIndex === from) {
+        collecting = true;
+      }
+      if (collecting) {
+        phrase += token.text;
+      }
+      if (token.wordIndex === to) {
+        break;
+      }
+    } else if (collecting) {
+      phrase += token.text;
+    }
+  }
+  return phrase.replace(/\s+/g, " ").trim();
+}
+
+function paintHistoryWordRange(
+  container: HTMLElement,
+  startWord: number,
+  endWord: number,
+): void {
+  const from = Math.min(startWord, endWord);
+  const to = Math.max(startWord, endWord);
+  container.querySelectorAll(".history-word").forEach((node) => {
+    const word = node as HTMLElement;
+    const index = Number(word.dataset.wordIndex);
+    word.classList.toggle("is-in-range", index >= from && index <= to);
+  });
+}
+
+function clearHistoryWordRange(container: HTMLElement | Document = document): void {
+  container.querySelectorAll(".history-word.is-in-range").forEach((node) => {
+    node.classList.remove("is-in-range");
+  });
+}
+
+function appendHistoryWords(
+  container: HTMLElement,
+  text: string,
+  entryIndex: number,
+): void {
+  const tokens = historyTokensFromText(text);
+  for (const token of tokens) {
+    if (token.kind === "gap") {
+      container.append(token.text);
+      continue;
+    }
+    const word = document.createElement("span");
+    word.className = "history-word";
+    word.dataset.wordIndex = String(token.wordIndex);
+    word.textContent = token.text;
+    word.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (
+        historyRangeAnchor !== null &&
+        historyRangeAnchor.entryIndex === entryIndex
+      ) {
+        const spoken = spokenPhraseBetweenWords(
+          tokens,
+          historyRangeAnchor.wordIndex,
+          token.wordIndex,
+        );
+        historyRangeAnchor = null;
+        clearHistoryWordRange();
+        if (spoken !== "") {
+          openWordReplacement(entryIndex, spoken);
+        }
+        return;
+      }
+      historyRangeAnchor = { entryIndex, wordIndex: token.wordIndex };
+      clearHistoryWordRange();
+      paintHistoryWordRange(container, token.wordIndex, token.wordIndex);
+    });
+    word.addEventListener("mouseenter", () => {
+      if (
+        historyRangeAnchor === null ||
+        historyRangeAnchor.entryIndex !== entryIndex
+      ) {
+        return;
+      }
+      paintHistoryWordRange(container, historyRangeAnchor.wordIndex, token.wordIndex);
+    });
+    container.append(word);
   }
 }
 
@@ -293,6 +390,8 @@ function openWordReplacement(entryIndex: number, spoken: string): void {
 function closeWordReplacement(): void {
   wordReplaceEntryIndex = null;
   wordReplaceSpoken = "";
+  historyRangeAnchor = null;
+  clearHistoryWordRange();
   elements.wordReplace.hidden = true;
   elements.wordReplaceTo.value = "";
 }

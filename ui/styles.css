@@ -453,6 +453,10 @@ html[data-os="linux"] select {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+.history-word.is-in-range {
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
 .word-replace {
   position: fixed;
   inset: 0;
