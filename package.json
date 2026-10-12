@@ -1,7 +1,7 @@
 {
   "name": "rustle",
   "private": true,
-  "version": "0.1.13",
+  "version": "0.1.14",
   "type": "module",
   "scripts": {
     "tauri": "tauri",
@@ -14,7 +14,8 @@
     "web:build": "pnpm run web:wasm && vite build --config vite.web.config.ts",
     "web:preview": "vite preview --config vite.web.config.ts",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
-    "build:restart": "node tools/build-and-restart-rustle.ts"
+    "build:restart": "node tools/build-and-restart-rustle.ts",
+    "build:ios-testflight": "node tools/build-ios-testflight.ts"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

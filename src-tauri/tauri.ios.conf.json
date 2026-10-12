@@ -1,5 +1,5 @@
 {
-  "identifier": "com.annix.rustle",
+  "identifier": "io.github.nbarrett.rustle",
   "app": {
     "windows": [
       {
@@ -13,7 +13,8 @@
   "bundle": {
     "iOS": {
       "developmentTeam": "93S4343SAT",
-      "minimumSystemVersion": "16.0"
+      "minimumSystemVersion": "16.0",
+      "bundleVersion": "1"
     }
   }
 }

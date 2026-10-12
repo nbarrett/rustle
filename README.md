@@ -2,7 +2,7 @@
 
 Open-source, local, **Rust** dictation. A Wispr Flow replacement you own.
 
-**[Download for your computer](https://nbarrett.github.io/rustle/)** — macOS, Windows, or Linux. The page picks the file that matches the machine you are on. Phone builds (iOS and Android) are in the repo as a hold-to-talk app: same on-device Whisper. On iPhone, a Rustle keyboard stands in for the phone’s own dictation and types into WhatsApp, Mail or Notes.
+**[Download for your computer](https://nbarrett.github.io/rustle/)** — macOS, Windows, or Linux. The page picks the file that matches the machine you are on. Phone builds are in the repo as a hold-to-talk app using the same on-device Whisper. The iPhone and iPad beta produces text to copy into other apps.
 
 Your voice is transcribed by Whisper **on your own machine** and never leaves it, so it is private, free, and impossible to rate-limit. The experience is the Wispr Flow one: hold a hotkey, talk, and the text appears in whatever app you are using.
 
@@ -146,25 +146,21 @@ Config and downloaded models are stored under the OS app-data folder: `~/Library
 5. **Phone** *(started)* - iOS hold-to-talk in the Rustle app, plus a Rustle keyboard so WhatsApp, Mail and Notes can take the words. Android is the same pad today; an Android keyboard is next.
 6. **Ship it** - MIT on GitHub, so no one can ever switch it off.
 
-### Phone (iOS and Android)
+### iPhone and iPad beta
 
-Apple will not let a third-party app replace the system dictation key on the stock keyboard. The way to plug Rustle in *in place of* that is the **Rustle keyboard**, with Whisper doing the English.
+The iOS build uses `io.github.nbarrett.rustle` on Nicholas Barrett's Apple team. It supports iPhone and iPad running iOS/iPadOS 16 or later. The first beta is a standalone dictation app: download a model in General, hold the microphone button, speak, release, then copy the transcript into Messages, Mail or another app. Speech is processed on the device. You do not need to disable Apple Dictation or install a keyboard.
 
-1. Turn off Apple Dictation: **Settings → General → Keyboard → Enable Dictation**.
-2. Add **Settings → General → Keyboard → Keyboards → Add New Keyboard → Rustle**, then **Allow Full Access**.
-3. In WhatsApp, Mail or Notes, switch to the Rustle keyboard and tap the mic. Talk in that app; tap again when you are done. The words go into the field.
+The experimental keyboard sources remain in the repository but are excluded from the beta. They are not an approved or tested distribution feature.
 
-iOS still has to wake Rustle for a moment to start the microphone. After that you stay in the app you were writing in. In the Rustle app itself the control is still hold-to-talk.
+Build the signed TestFlight package with Xcode, XcodeGen, the Apple developer account and the installed iOS Rust target:
 
 ```bash
-rustup target add aarch64-apple-ios aarch64-linux-android
-npx tauri ios init
-npx tauri android init
-npx tauri ios dev
-npx tauri android dev
+pnpm build:ios-testflight 1
 ```
 
-iOS needs Xcode and your Apple Development team (`93S4343SAT` is already in `src-tauri/tauri.ios.conf.json`). Android needs Android Studio / NDK. First run downloads a Whisper model on the device; start with base.en.
+Use a new positive build number for each upload. The script checks desktop compilation and tests before archiving and exporting. It preserves the previous archive, does not upload, and does not commit or push. See [iPad beta preparation and acceptance](docs/ios-testflight.md).
+
+Android remains a separate source build using `npx tauri android init` and `npx tauri android dev`.
 
 ## Why this exists
 
