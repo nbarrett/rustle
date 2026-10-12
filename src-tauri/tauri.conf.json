@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Rustle",
-  "version": "0.1.14",
-  "identifier": "com.annix.rustle",
+  "version": "0.1.15",
+  "identifier": "io.github.nbarrett.rustle",
   "build": {
     "beforeDevCommand": "npx vite",
     "devUrl": "http://localhost:1420",

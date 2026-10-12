@@ -1,12 +1,12 @@
 import UIKit
 
 final class KeyboardViewController: UIInputViewController {
-    private let groupId = "group.com.annix.rustle"
+    private let groupId = "group.io.github.nbarrett.rustle"
     private let textKey = "pendingText"
     private let tokenKey = "pendingToken"
     private let phaseKey = "phase"
     private let lastTokenKey = "lastInsertedToken"
-    private let stopName = "com.annix.rustle.keyboard-stop"
+    private let stopName = "io.github.nbarrett.rustle.keyboard-stop"
     private let idleGreen = UIColor(red: 0.15, green: 0.83, blue: 0.40, alpha: 1)
     private let listeningGreen = UIColor(red: 0.07, green: 0.55, blue: 0.49, alpha: 1)
     private let micButton = UIButton(type: .custom)

@@ -112,7 +112,7 @@ impl FrontApp {
             || self
                 .bundle
                 .as_deref()
-                .is_some_and(|bundle| bundle.eq_ignore_ascii_case("com.annix.rustle"))
+                .is_some_and(|bundle| bundle.eq_ignore_ascii_case("io.github.nbarrett.rustle"))
     }
 
     pub fn is_outlook(&self) -> bool {
@@ -975,7 +975,7 @@ mod tests {
     fn recognises_the_openai_desktop_apps() {
         assert!(bundle_looks_like_an_openai_desktop_app("com.openai.chat"));
         assert!(bundle_looks_like_an_openai_desktop_app("com.openai.codex"));
-        assert!(!bundle_looks_like_an_openai_desktop_app("com.annix.rustle"));
+        assert!(!bundle_looks_like_an_openai_desktop_app("io.github.nbarrett.rustle"));
     }
 
     #[test]

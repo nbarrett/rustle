@@ -30,7 +30,7 @@ rustle/
       bin/rustle_cli.rs  terminal build
   src-tauri/       Tauri v2 menu-bar app (crate: rustle-app)
     src/main.rs      tray icon, settings window, IPC commands, window auto-resize, accessibility request
-    tauri.conf.json  window config, identifier com.annix.rustle
+    tauri.conf.json  window config, identifier io.github.nbarrett.rustle
     Info.plist       NSMicrophoneUsageDescription, LSUIElement
     capabilities/default.json
     icons/           waveform icons (tray.png is the monochrome template)
@@ -64,7 +64,7 @@ Terminal build for quick pipeline checks: `cargo run -p rustle-core --bin rustle
 
 ## macOS permissions — the hard part (read this)
 
-Three separate TCC permissions, all granted to bundle id **com.annix.rustle**:
+Three separate TCC permissions, all granted to bundle id **io.github.nbarrett.rustle**:
 - **Input Monitoring** — to hear the global hotkey (CGEventTap).
 - **Microphone** — to record.
 - **Accessibility** — to inject text into other apps. This is the one that matters and the one that keeps failing.
@@ -75,7 +75,7 @@ Hard-won facts, all confirmed by reading the app's own status log during the ses
 2. **Every rebuild resets all grants.** The app is ad-hoc signed, so each build has a new code hash, and macOS treats it as a different app. This is the churn that dominated the session. THE fix is a stable code signature (see Open items).
 3. **The grant is a toggle in the Accessibility LIST, not the pop-up dialog.** The "Rustle would like to control..." dialog just points at System Settings; clicking it grants nothing. The user must flip the switch in the list.
 4. **Launching the app from a shell may break TCC "responsibility."** During the session the app was launched with `open --stderr /tmp/log ...` to capture output; there is an untested theory that this makes the shell (not Rustle) the responsible process, so grants to Rustle do not apply. The current guidance is: the USER launches it from Spotlight, and you do NOT launch it with `open --stderr`. This theory is unconfirmed.
-5. Reset grants cleanly with: `tccutil reset Accessibility com.annix.rustle` (and `ListenEvent` for Input Monitoring, `Microphone`). Then relaunch and re-grant.
+5. Reset grants cleanly with: `tccutil reset Accessibility io.github.nbarrett.rustle` (and `ListenEvent` for Input Monitoring, `Microphone`). Then relaunch and re-grant.
 6. The **fn / Globe key** is unreliable as a hotkey unless the user frees it: System Settings -> Keyboard -> "Press Globe key to: Do Nothing", and Dictation Off. Right Option / Left Option have no such conflict. Current config uses `RightOption`.
 
 ## Full problem log (every issue raised this session)

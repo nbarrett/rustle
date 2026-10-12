@@ -1,5 +1,5 @@
 {
-  "identifier": "com.annix.rustle",
+  "identifier": "io.github.nbarrett.rustle",
   "app": {
     "windows": [
       {

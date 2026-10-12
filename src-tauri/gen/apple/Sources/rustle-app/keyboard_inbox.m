@@ -2,8 +2,8 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
-static NSString *const kRustleAppGroup = @"group.com.annix.rustle";
-static NSString *const kRustleStopName = @"com.annix.rustle.keyboard-stop";
+static NSString *const kRustleAppGroup = @"group.io.github.nbarrett.rustle";
+static NSString *const kRustleStopName = @"io.github.nbarrett.rustle.keyboard-stop";
 static void (*gKeyboardStopHandler)(void) = NULL;
 static BOOL gStopObserverAdded = NO;
 static UIBackgroundTaskIdentifier gTranscribeTask = UIBackgroundTaskInvalid;

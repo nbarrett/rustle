@@ -2,14 +2,14 @@
 
 Updated 12 October 2026.
 
-The first iOS beta is a standalone dictation app on bundle id `io.github.nbarrett.rustle`, team `93S4343SAT`. Hold the microphone, speak, release, then copy the transcript. There is no keyboard extension in this beta.
+Mac, iPhone, iPad and Android all use bundle id `io.github.nbarrett.rustle` on team `93S4343SAT`. The first iOS beta is a standalone dictation app: hold the microphone, speak, release, then copy the transcript. There is no keyboard extension in this beta.
 
 ## Apple identifiers
 
-On [Identifiers](https://developer.apple.com/account/resources/identifiers/list) you need an App ID whose bundle id is `io.github.nbarrett.rustle`.
+On [Identifiers](https://developer.apple.com/account/resources/identifiers/list) there should be one App ID: `io.github.nbarrett.rustle` (currently listed as Rustle Personal). That is Mac, iOS and Android.
 
-1. Confirm an App ID named Rustle with that exact bundle id already exists. If it does, leave it. Automatic signing in Xcode will reuse it.
-2. If it is missing, register a new App ID: type App, bundle id explicit `io.github.nbarrett.rustle`, description Rustle.
+1. Keep `io.github.nbarrett.rustle`. Automatic signing reuses it.
+2. After a Mac build of 0.1.15 or later is installed and dictation works, delete the leftover `com.annix.rustle` App ID. Do not delete it before that install.
 3. Do not add a keyboard extension App ID for this beta. The keyboard sources stay in the repo and are excluded from the archive.
 4. No App Group, Push Notifications, or Associated Domains are required for the standalone app.
 
