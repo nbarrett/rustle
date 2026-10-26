@@ -196,8 +196,32 @@ pub fn live_preview_only_adds_a_whisper_outro(previous: &str, next: &str) -> boo
     !extra.is_empty() && transcript_is_a_trailing_whisper_outro(extra)
 }
 
+fn without_trailing_youtube_caption_credits(text: &str) -> String {
+    let lower = text.to_ascii_lowercase();
+    const MARKERS: &[&str] = &[
+        "subtitles by",
+        "thanks for watching",
+        "thank you for watching",
+        "please subscribe",
+        "like and subscribe",
+    ];
+    let mut cut_at = None;
+    for marker in MARKERS {
+        if let Some(index) = lower.find(marker) {
+            cut_at = Some(cut_at.map_or(index, |current: usize| current.min(index)));
+        }
+    }
+    let Some(index) = cut_at else {
+        return text.to_string();
+    };
+    if index == 0 {
+        return text.to_string();
+    }
+    text[..index].trim_end().to_string()
+}
+
 pub fn without_trailing_whisper_outros(text: &str) -> String {
-    let mut current = text.trim_end().to_string();
+    let mut current = without_trailing_youtube_caption_credits(text.trim_end());
     loop {
         let stripped = strip_one_trailing_whisper_outro(&current)
             .or_else(|| strip_one_title_case_trailing_whisper_outro(&current));
@@ -427,6 +451,14 @@ mod tests {
             transcript_ready_for_the_clipboard("Book the walk for Tuesday. Thank you.", &[], false),
             Some("Book the walk for Tuesday.".to_string())
         );
+        assert_eq!(
+            transcript_ready_for_the_clipboard(
+                "putting this on the end Subtitles by the Amara.org community",
+                &[],
+                false
+            ),
+            Some("putting this on the end".to_string())
+        );
     }
 
     #[test]
@@ -468,6 +500,18 @@ mod tests {
         assert_eq!(
             without_trailing_whisper_outros("That's all. Thanks for watching."),
             "That's all."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros(
+                "Rustle has gone slowly. Subtitles by the Amara.org community"
+            ),
+            "Rustle has gone slowly."
+        );
+        assert_eq!(
+            without_trailing_whisper_outros(
+                "putting this on the end Subtitles by the Amara.org community"
+            ),
+            "putting this on the end"
         );
         assert_eq!(
             without_trailing_whisper_outros("Do it like the other one. Bye."),
