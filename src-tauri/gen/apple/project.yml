@@ -55,7 +55,7 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.1.18
+        CFBundleShortVersionString: 0.1.19,
         CFBundleVersion: "2"
         NSMicrophoneUsageDescription: Rustle listens to your microphone so it can transcribe your speech into text on your own phone.
     scheme:
