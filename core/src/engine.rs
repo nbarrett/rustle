@@ -1,6 +1,7 @@
 #[cfg(not(target_os = "macos"))]
 use anyhow::anyhow;
 use anyhow::Result;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -572,8 +573,10 @@ fn plan_insertion_for_the_focused_field(
         {
             return plan_insertion_without_caret_context();
         }
-        match crate::mac_ax::insert_context_for_the_target_field(insert_target.map(|app| app.pid)) {
-            Ok(context) => {
+        match catch_unwind(AssertUnwindSafe(|| {
+            crate::mac_ax::insert_context_for_the_target_field(insert_target.map(|app| app.pid))
+        })) {
+            Ok(Ok(context)) => {
                 let punctuation = plan_insertion_for_caret(
                     &context.text_before_caret,
                     &context.text_after_caret,
@@ -589,8 +592,12 @@ fn plan_insertion_for_the_focused_field(
                 ));
                 punctuation
             }
-            Err(error) => {
+            Ok(Err(error)) => {
                 write_engine_log(&format!("caret context unavailable: {error}"));
+                plan_insertion_without_caret_context()
+            }
+            Err(_) => {
+                write_engine_log("caret context panicked");
                 plan_insertion_without_caret_context()
             }
         }
@@ -820,8 +827,7 @@ fn transcribe_captured_samples(
     if trimmed.is_empty() || transcript_is_a_whisper_blank_phrase(trimmed) {
         return None;
     }
-    let shown =
-        without_trailing_whisper_outros(&without_whisper_silence_ellipses(trimmed));
+    let shown = without_trailing_whisper_outros(&without_whisper_silence_ellipses(trimmed));
     if shown.is_empty() || transcript_is_a_whisper_blank_phrase(&shown) {
         return None;
     }
@@ -1117,15 +1123,30 @@ fn insert_text_for_target(
                 return Ok(InsertKind::Unchanged);
             }
             if let Some(app) = target {
-                crate::mac_paste::paste_string_into_pid(app.pid, current)?;
-                write_engine_log(&format!(
-                    "paste insert used pid={} name={} chars={} text={:?}",
-                    app.pid,
-                    app.name,
-                    current.chars().count(),
-                    current
-                ));
-                write_insert_receipt(None, current, false);
+                if app.is_a_web_browser() {
+                    if let Err(error) = crate::mac_paste::activate_pid(app.pid) {
+                        write_engine_log(&format!("activate failed: {error}"));
+                    }
+                    crate::mac_paste::post_unicode_as_hid_keystrokes(current)?;
+                    write_engine_log(&format!(
+                        "browser unicode insert used pid={} name={} chars={} text={:?}",
+                        app.pid,
+                        app.name,
+                        current.chars().count(),
+                        current
+                    ));
+                    write_insert_receipt(None, current, false);
+                } else {
+                    crate::mac_paste::paste_string_into_pid(app.pid, current)?;
+                    write_engine_log(&format!(
+                        "paste insert used pid={} name={} chars={} text={:?}",
+                        app.pid,
+                        app.name,
+                        current.chars().count(),
+                        current
+                    ));
+                    write_insert_receipt(None, current, false);
+                }
             }
             return Ok(InsertKind::Keystroke);
         }

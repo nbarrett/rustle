@@ -145,16 +145,17 @@ fn start_cpal_recording(preferred_device_name: Option<&str>) -> Result<ActiveRec
     let stream = match sample_format {
         cpal::SampleFormat::F32 => device.build_input_stream(
             &config,
-            move |data: &[f32], _| sink.lock().unwrap().extend_from_slice(data),
+            move |data: &[f32], _| append_captured_f32_samples(&sink, data),
             report_stream_error,
             None,
         )?,
         cpal::SampleFormat::I16 => device.build_input_stream(
             &config,
             move |data: &[i16], _| {
-                sink.lock()
-                    .unwrap()
-                    .extend(data.iter().map(|sample| *sample as f32 / i16::MAX as f32));
+                append_captured_samples(
+                    &sink,
+                    data.iter().map(|sample| *sample as f32 / i16::MAX as f32),
+                );
             },
             report_stream_error,
             None,
@@ -162,9 +163,10 @@ fn start_cpal_recording(preferred_device_name: Option<&str>) -> Result<ActiveRec
         cpal::SampleFormat::I32 => device.build_input_stream(
             &config,
             move |data: &[i32], _| {
-                sink.lock()
-                    .unwrap()
-                    .extend(data.iter().map(|sample| *sample as f32 / i32::MAX as f32));
+                append_captured_samples(
+                    &sink,
+                    data.iter().map(|sample| *sample as f32 / i32::MAX as f32),
+                );
             },
             report_stream_error,
             None,
@@ -172,7 +174,8 @@ fn start_cpal_recording(preferred_device_name: Option<&str>) -> Result<ActiveRec
         cpal::SampleFormat::U16 => device.build_input_stream(
             &config,
             move |data: &[u16], _| {
-                sink.lock().unwrap().extend(
+                append_captured_samples(
+                    &sink,
                     data.iter()
                         .map(|sample| (*sample as f32 / u16::MAX as f32) * 2.0 - 1.0),
                 );
@@ -193,6 +196,18 @@ fn start_cpal_recording(preferred_device_name: Option<&str>) -> Result<ActiveRec
         sample_rate,
         channels,
     })
+}
+
+fn append_captured_f32_samples(sink: &Mutex<Vec<f32>>, data: &[f32]) {
+    if let Ok(mut samples) = sink.lock() {
+        samples.extend_from_slice(data);
+    }
+}
+
+fn append_captured_samples(sink: &Mutex<Vec<f32>>, data: impl IntoIterator<Item = f32>) {
+    if let Ok(mut samples) = sink.lock() {
+        samples.extend(data);
+    }
 }
 
 fn write_audio_log(message: &str) {
@@ -236,7 +251,10 @@ pub fn stop_recording(active: ActiveRecording) -> (Vec<f32>, u32, u16) {
         channels,
     } = active;
     drop(_keep_capturing);
-    let captured = samples.lock().unwrap().clone();
+    let captured = match samples.lock() {
+        Ok(guard) => guard.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    };
     (captured, sample_rate, channels)
 }
 

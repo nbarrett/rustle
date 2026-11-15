@@ -63,6 +63,8 @@ extern "C" {
         encoding: u32,
         is_external_representation: u8,
     ) -> CFStringRef;
+    fn CFGetTypeID(cf: *const c_void) -> usize;
+    fn CFStringGetTypeID() -> usize;
     fn CFStringGetLength(the_string: CFStringRef) -> isize;
     fn CFStringGetCString(
         the_string: CFStringRef,
@@ -676,6 +678,8 @@ pub fn activate_pid(pid: i32) -> Result<()> {
     Ok(())
 }
 
+const UNICODE_HID_CHUNK_UTF16: usize = 20;
+
 pub fn post_unicode_to_pid(pid: i32, text: &str) -> Result<()> {
     if text.is_empty() {
         return Ok(());
@@ -696,6 +700,34 @@ pub fn post_unicode_to_pid(pid: i32, text: &str) -> Result<()> {
             CGEventKeyboardSetUnicodeString(up, encoded.len(), encoded.as_ptr());
             CGEventPostToPid(pid, up);
             CFRelease(up as *const c_void);
+        }
+        CFRelease(source as *const c_void);
+    }
+    Ok(())
+}
+
+pub fn post_unicode_as_hid_keystrokes(text: &str) -> Result<()> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    let encoded: Vec<u16> = text.encode_utf16().collect();
+    unsafe {
+        let source = create_event_source()?;
+        for chunk in encoded.chunks(UNICODE_HID_CHUNK_UTF16) {
+            let down = CGEventCreateKeyboardEvent(source, 0, true);
+            if down.is_null() {
+                CFRelease(source as *const c_void);
+                return Err(anyhow!("failed to create unicode key event"));
+            }
+            CGEventKeyboardSetUnicodeString(down, chunk.len(), chunk.as_ptr());
+            post_typed_event(down);
+            CFRelease(down as *const c_void);
+            let up = CGEventCreateKeyboardEvent(source, 0, false);
+            if !up.is_null() {
+                CGEventKeyboardSetUnicodeString(up, chunk.len(), chunk.as_ptr());
+                post_typed_event(up);
+                CFRelease(up as *const c_void);
+            }
         }
         CFRelease(source as *const c_void);
     }
@@ -888,13 +920,24 @@ fn dictionary_string(dictionary: CFDictionaryRef, key: CFStringRef) -> Option<St
     }
 }
 
+const MAX_DICTIONARY_STRING_UTF16_UNITS: isize = 16_384;
+
 fn cf_string_to_rust(value: CFStringRef) -> Option<String> {
     unsafe {
-        let length = CFStringGetLength(value);
-        if length < 0 {
+        if value.is_null() {
             return None;
         }
-        let mut buffer = vec![0i8; (length as usize) * 4 + 1];
+        if CFGetTypeID(value as *const c_void) != CFStringGetTypeID() {
+            return None;
+        }
+        let length = CFStringGetLength(value);
+        if length < 0 || length > MAX_DICTIONARY_STRING_UTF16_UNITS {
+            return None;
+        }
+        let buffer_size = (length as usize).saturating_mul(4).saturating_add(1);
+        let mut buffer = Vec::new();
+        buffer.try_reserve_exact(buffer_size).ok()?;
+        buffer.resize(buffer_size, 0i8);
         let ok = CFStringGetCString(
             value,
             buffer.as_mut_ptr(),
@@ -921,7 +964,7 @@ mod tests {
     };
 
     #[test]
-    fn browser_dictation_uses_a_finished_paste_instead_of_accessibility_writes() {
+    fn browser_dictation_holds_live_words_and_types_the_finished_clip() {
         for (name, bundle) in [
             ("Brave Browser", "com.brave.Browser"),
             ("Google Chrome", "com.google.Chrome"),
@@ -937,6 +980,7 @@ mod tests {
                 session_id: None,
                 session_name: None,
             };
+            assert!(app.is_a_web_browser(), "{name}");
             assert!(app.pastes_the_finished_clip(), "{name}");
         }
         let app = super::FrontApp {
@@ -975,7 +1019,9 @@ mod tests {
     fn recognises_the_openai_desktop_apps() {
         assert!(bundle_looks_like_an_openai_desktop_app("com.openai.chat"));
         assert!(bundle_looks_like_an_openai_desktop_app("com.openai.codex"));
-        assert!(!bundle_looks_like_an_openai_desktop_app("io.github.nbarrett.rustle"));
+        assert!(!bundle_looks_like_an_openai_desktop_app(
+            "io.github.nbarrett.rustle"
+        ));
     }
 
     #[test]

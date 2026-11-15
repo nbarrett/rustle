@@ -110,6 +110,8 @@ extern "C" {
         value_callbacks: *const c_void,
     ) -> CFTypeRef;
     fn CFRelease(cf: CFTypeRef);
+    fn CFGetTypeID(cf: CFTypeRef) -> usize;
+    fn CFStringGetTypeID() -> usize;
     fn CFStringGetLength(the_string: CFStringRef) -> isize;
     fn CFStringGetCString(
         the_string: CFStringRef,
@@ -512,14 +514,31 @@ unsafe fn copy_string_attribute(element: AXUIElementRef, attribute_name: &str) -
     text.ok_or_else(|| anyhow!("{attribute_name} was not text"))
 }
 
+const MAX_ACCESSIBILITY_STRING_UTF16_UNITS: isize = 2_000_000;
+
+fn utf8_buffer_size_for_utf16_length(length: isize) -> Option<usize> {
+    if length < 0 || length > MAX_ACCESSIBILITY_STRING_UTF16_UNITS {
+        return None;
+    }
+    Some((length as usize).saturating_mul(4).saturating_add(1))
+}
+
 unsafe fn cf_string_to_rust(value: CFStringRef) -> Option<String> {
+    if value.is_null() {
+        return None;
+    }
+    if CFGetTypeID(value as CFTypeRef) != CFStringGetTypeID() {
+        return None;
+    }
     let length = CFStringGetLength(value);
-    let buffer_size = length * 4 + 1;
-    let mut buffer = vec![0u8; buffer_size as usize];
+    let buffer_size = utf8_buffer_size_for_utf16_length(length)?;
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(buffer_size).ok()?;
+    buffer.resize(buffer_size, 0u8);
     if CFStringGetCString(
         value,
         buffer.as_mut_ptr().cast(),
-        buffer_size,
+        buffer_size as isize,
         CF_STRING_ENCODING_UTF8,
     ) == 0
     {
@@ -647,5 +666,19 @@ mod insertion_context_tests {
         for (location, length) in [(-1, 0), (0, -1), (5, 0), (3, 2), (isize::MAX, isize::MAX)] {
             assert!(split_field_around_utf16_selection("text", location, length).is_err());
         }
+    }
+
+    #[test]
+    fn accessibility_strings_reject_unusable_utf16_lengths() {
+        assert_eq!(super::utf8_buffer_size_for_utf16_length(0), Some(1));
+        assert_eq!(super::utf8_buffer_size_for_utf16_length(4), Some(17));
+        assert_eq!(super::utf8_buffer_size_for_utf16_length(-1), None);
+        assert_eq!(
+            super::utf8_buffer_size_for_utf16_length(
+                super::MAX_ACCESSIBILITY_STRING_UTF16_UNITS + 1
+            ),
+            None
+        );
+        assert_eq!(super::utf8_buffer_size_for_utf16_length(isize::MAX), None);
     }
 }
